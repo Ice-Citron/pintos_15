@@ -30,9 +30,9 @@ static bool too_many_loops (unsigned loops);
 static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
 static void real_time_delay (int64_t num, int32_t denom);
-static bool expiry_tick_less(const struct list_elem *a_,
-                             const struct list_elem *b_, void *aux UNUSED);
-static void check_sleep_list(void);
+static bool expiry_tick_less (const struct list_elem *a_,
+                              const struct list_elem *b_, void *aux UNUSED);
+static void check_sleep_list (void);
 
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
    and registers the corresponding interrupt. */
@@ -92,25 +92,27 @@ timer_elapsed (int64_t then)
 /* Sleeps for approximately TICKS timer ticks by blocking the current thread. 
    Interrupts must be turned on during list-handling because sleep_list is 
    handled by timer interrupt handler */
-void timer_sleep(int64_t ticks) {
+void
+timer_sleep(int64_t ticks) 
+{
   struct sleep_record record;
   enum intr_level old_level;
 
-  ASSERT(intr_get_level() == INTR_ON);
+  ASSERT (intr_get_level () == INTR_ON);
 
   if (ticks <= 0)
     return;
 
-  record.expiry_tick = timer_ticks() + ticks;
-  sema_init(&record.sema, 0);
+  record.expiry_tick = timer_ticks () + ticks;
+  sema_init (&record.sema, 0);
 
   /* Interrupts must be disabled during list-handling because sleep_list is 
-     handled by timer interrupt handler */
-  old_level = intr_disable();
-  list_insert_ordered(&sleep_list, &record.elem, &expiry_tick_less, NULL);
-  intr_set_level(old_level);
+    handled by timer interrupt handler */
+  old_level = intr_disable ();
+  list_insert_ordered (&sleep_list, &record.elem, &expiry_tick_less, NULL);
+  intr_set_level (old_level);
 
-  sema_down(&record.sema);
+  sema_down (&record.sema);
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -195,22 +197,24 @@ timer_interrupt (struct intr_frame *args UNUSED)
 /* Wakes every thread in sleep_list whose expiry_ticks <= ticks. Called by 
    timer_interrupt() on each tick.
 */
-static void check_sleep_list(void)
+static void 
+check_sleep_list(void)
 {
   struct sleep_record *earliest_record;
 
-  ASSERT(intr_context());
+  ASSERT (intr_context ());
   
-  while (!list_empty(&sleep_list)) {
-    earliest_record = list_entry(list_front(&sleep_list), struct sleep_record,
-                                 elem);
-    /* early exit as no later record will be expired given sleep_list is sorted */
-    if (earliest_record->expiry_tick > ticks) {
-      break;
+  while (!list_empty (&sleep_list)) 
+    {
+      earliest_record = list_entry (list_front (&sleep_list), 
+                                    struct sleep_record, elem);
+      /* Early-exit because sleep_list is sorted, so no later record has 
+         expired */
+      if (earliest_record->expiry_tick > ticks)
+        break;
+      list_pop_front (&sleep_list);
+      sema_up (&earliest_record->sema);
     }
-    list_pop_front(&sleep_list);
-    sema_up(&earliest_record->sema);
-  }
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
@@ -286,11 +290,13 @@ real_time_delay (int64_t num, int32_t denom)
 
 /* list_less_func for sleep_list. Returns true if A's expiry_tick is strictly 
    less than B's expiry_tick. */
-static bool expiry_tick_less(const struct list_elem *a_,
-                             const struct list_elem *b_, void *aux UNUSED) {
-  const struct sleep_record *record_a = list_entry(a_, struct sleep_record,
-                                                   elem);
-  const struct sleep_record *record_b = list_entry(b_, struct sleep_record,
-                                                   elem);
+static bool
+expiry_tick_less (const struct list_elem *a_, const struct list_elem *b_, 
+                  void *aux UNUSED) 
+{
+  const struct sleep_record *record_a = list_entry (a_, struct sleep_record,
+                                                    elem);
+  const struct sleep_record *record_b = list_entry (b_, struct sleep_record,
+                                                    elem);
   return record_a->expiry_tick < record_b->expiry_tick;
 }
