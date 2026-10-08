@@ -14,11 +14,12 @@
 static struct list sleep_list;
 
 /* Individual record of each sleeping thread in sleep_list */
-struct sleep_record {
-  int64_t expiry_tick;    /* Tick at which the thread should wake up */
-  struct list_elem elem;  /* List element in sleep_list */
-  struct semaphore sema;  /* Points at semaphore handling sleeping thread */
-};
+struct sleep_record 
+  {
+    int64_t expiry_tick;    /* Tick at which the thread should wake up */
+    struct list_elem elem;  /* List element in sleep_list */
+    struct semaphore sema;  /* Points at semaphore handling sleeping thread */
+  };
 
 void timer_init (void);
 void timer_calibrate (void);
