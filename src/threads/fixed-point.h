@@ -91,4 +91,12 @@ fp_mul (fixed_t x, fixed_t y)
     return ((int64_t) x) * y / FIXED_F;
 }
 
+/*  Returns X / Y, where Y is nonzero. Dividing two scaled values cancels the 
+    scaling, so X is multiplied by FIXED_F first. The multiplication is done
+    in 64 bits becuase X * FIXED_F can overflow 32 bits. */
+static inline fixed_t 
+fp_div (fixed_t x, fixed_t y)
+{
+    return ((int64_t) x) * FIXED_F / y;
+}
 #endif /* threads/fixed-point.h*/
