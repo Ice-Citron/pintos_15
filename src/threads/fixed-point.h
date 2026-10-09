@@ -26,4 +26,18 @@ fp_to_int_trunc (fixed_t x)
     return x / FIXED_F;
 }
 
+/*  Converts X to the nearest integer, rounding halfway cases away from zero. */
+static inline int
+fp_to_int_round (fixed_t x)
+{
+    int64_t adjusted;
+
+    if (x >= 0)
+    adjusted = (int64_t) x + FIXED_F / 2;
+    else
+        adjusted = (int64_t) x - FIXED_F / 2;
+
+    return adjusted / FIXED_F;
+
+}
 #endif /* threads/fixed-point.h*/
