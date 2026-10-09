@@ -55,4 +55,18 @@ fp_sub (fixed_t x, fixed_t y)
     return x - y;
 }
 
+/* Returns X + N, where N is an integer. */
+static inline fixed_t
+fp_add_int (fixed_t x, int n)
+{
+    return x + fp_from_int (n);
+}
+
+/* Returns X - N, where N is an integer. */
+static inline fixed_t
+fp_sub_int (fixed_t x, int n)
+{
+    return x - n * fp_from_int (n);
+}
+
 #endif /* threads/fixed-point.h*/
