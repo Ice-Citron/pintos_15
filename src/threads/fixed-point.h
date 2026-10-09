@@ -11,3 +11,12 @@
 
 /* A signed 32-bit fixed-point number with FIXED_Q fractional bits. */
 typedef int32_t fixed_t;
+
+/* Converts integer N to fixed-point. */
+static inline fixed_t
+fp_from_int (int n)
+{
+    return n * FIXED_F;
+}
+
+#endif /* threads/fixed-point.h*/
