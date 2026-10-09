@@ -69,4 +69,17 @@ fp_sub_int (fixed_t x, int n)
     return x - n * fp_from_int (n);
 }
 
+/* Returns X * N, where N is an integer. */
+static inline fixed_t
+fp_mul_int (fixed_t x, int n)
+{
+    return x * n;
+}
+
+/* Returns X / N, where N is a nonzero integer. */
+static inline fixed_t
+fp_div_int (fixed_t x, int n){
+    return x / n;
+}
+
 #endif /* threads/fixed-point.h*/
