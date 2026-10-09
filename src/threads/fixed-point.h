@@ -9,3 +9,5 @@
 /* Scaling factor used to convert between integers and fixed-point values. */
 #define FIXED_F (1 << FIXED_Q)
 
+/* A signed 32-bit fixed-point number with FIXED_Q fractional bits. */
+typedef int32_t fixed_t;
