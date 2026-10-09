@@ -40,4 +40,19 @@ fp_to_int_round (fixed_t x)
     return adjusted / FIXED_F;
 
 }
+
+/* Returns X + Y. */
+static inline fixed_t
+fp_add (fixed_t x, fixed_t y)
+{
+    return x + y;
+}
+
+/* Returns X - Y. */
+static inline fixed_t
+fp_sub (fixed_t x, fixed_t y)
+{
+    return x - y;
+}
+
 #endif /* threads/fixed-point.h*/
