@@ -19,4 +19,11 @@ fp_from_int (int n)
     return n * FIXED_F;
 }
 
+/* Converts X to an integer, rounding toward zero. */
+static inline int
+fp_to_int_trunc (fixed_t x)
+{
+    return x / FIXED_F;
+}
+
 #endif /* threads/fixed-point.h*/
