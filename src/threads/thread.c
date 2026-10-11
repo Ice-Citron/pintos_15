@@ -351,6 +351,8 @@ void
 thread_set_priority (int new_priority) 
 {
   enum intr_level old_level;
+  struct list_elem *e;
+  bool should_yield = false;
 
   ASSERT (!intr_context ());
 
@@ -359,6 +361,20 @@ thread_set_priority (int new_priority)
 
   old_level = intr_disable ();
   thread_current ()->priority = new_priority;
+
+  for (e = list_begin (&ready_list); e != list_end (&ready_list);
+       e = list_next(e))
+    {
+      struct thread *ready = list_entry (e, struct thread, elem);
+      if (ready->priority > new_priority)
+        {
+          should_yield = true;
+          break;
+        }
+    }
+  if (should_yield)
+    thread_yield ();
+
   intr_set_level (old_level);
 }
 
