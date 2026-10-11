@@ -353,8 +353,11 @@ thread_refresh_priority (struct thread *t)
   ASSERT (t != NULL);
   ASSERT (intr_get_level () == INTR_OFF);
   if (!thread_mlfqs)
-    t->priority = t->base_priority > t->donated_priority
-                  ? t->base_priority : t->donated_priority;
+    {
+      ASSERT (t->base_priority >= PRI_MIN && t->base_priority <= PRI_MAX);
+      ASSERT (t->donated_priority >= PRI_MIN && t->donated_priority <= PRI_MAX);
+      t->priority = t->base_priority > t->donated_priority ? t->base_priority : t->donated_priority;
+    }
 }
 
 /* Changes the current threads base priority without losing donations */
