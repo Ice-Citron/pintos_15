@@ -512,6 +512,7 @@ thread_init (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->base_priority = priority;
+  t->donated_priority = PRI_MIN;
 #ifdef USERPROG
   t->process = NULL;
 #endif   

@@ -93,6 +93,7 @@ struct thread
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Effective Priority. */
     int base_priority;                  /* Priority chosen by the thread. */
+    int donated_priority;               /* Highest active donation or PRI_MIN */
     struct list_elem allelem;           /* List element for all threads list. */
 
     /* Shared between thread.c and synch.c. */
