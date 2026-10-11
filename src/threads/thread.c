@@ -350,12 +350,16 @@ thread_foreach (thread_action_func *func, void *aux)
 void
 thread_set_priority (int new_priority) 
 {
+  enum intr_level old_level;
+
   ASSERT (!intr_context ());
-  
+
   if (thread_mlfqs || new_priority < PRI_MIN || new_priority > PRI_MAX)
     return;
 
+  old_level = intr_disable ();
   thread_current ()->priority = new_priority;
+  intr_set_level (old_level);
 }
 
 /* Returns the current thread's priority. */
