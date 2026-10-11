@@ -360,6 +360,7 @@ thread_set_priority (int new_priority)
     return;
 
   old_level = intr_disable ();
+  thread_current ()->base_priority = new_priority;
   thread_current ()->priority = new_priority;
 
   for (e = list_begin (&ready_list); e != list_end (&ready_list);
@@ -510,6 +511,7 @@ thread_init (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
+  t->base_priority = priority;
 #ifdef USERPROG
   t->process = NULL;
 #endif   
