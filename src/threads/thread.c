@@ -357,13 +357,14 @@ thread_refresh_priority (struct thread *t)
                   ? t->base_priority : t->donated_priority;
 }
 
-/* Sets the current thread's priority to NEW_PRIORITY. */
+/* Changes the current threads base priority without losing donations */
 void
 thread_set_priority (int new_priority) 
 {
   enum intr_level old_level;
   struct list_elem *e;
   bool should_yield = false;
+  struct thread *cur;
 
   ASSERT (!intr_context ());
 
@@ -371,14 +372,15 @@ thread_set_priority (int new_priority)
     return;
 
   old_level = intr_disable ();
-  thread_current ()->base_priority = new_priority;
-  thread_current ()->priority = new_priority;
+  cur = thread_current ();
+  cur->base_priority = new_priority;
+  thread_refresh_priority (cur);
 
   for (e = list_begin (&ready_list); e != list_end (&ready_list);
        e = list_next(e))
     {
       struct thread *ready = list_entry (e, struct thread, elem);
-      if (ready->priority > new_priority)
+      if (ready->priority > cur->priority)
         {
           should_yield = true;
           break;
