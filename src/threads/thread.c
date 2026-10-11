@@ -346,6 +346,17 @@ thread_foreach (thread_action_func *func, void *aux)
     }
 }
 
+/* Recalculates effective priority after its donations change. The caller must have interrupts disabled */
+void
+thread_refresh_priority (struct thread *t)
+{
+  ASSERT (t != NULL);
+  ASSERT (intr_get_level () == INTR_OFF);
+  if (!thread_mlfqs)
+    t->priority = t->base_priority > t->donated_priority
+                  ? t->base_priority : t->donated_priority;
+}
+
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) 
