@@ -4,6 +4,7 @@
 #include <random.h>
 #include <stdio.h>
 #include <string.h>
+#include "devices/timer.h"
 #include "threads/flags.h"
 #include "threads/interrupt.h"
 #include "threads/intr-stubs.h"
@@ -37,7 +38,10 @@ static struct lock tid_lock;
 
 /* System load average, estimates the average number of threads ready to run 
    the past minute */
-static fixed_t load_avg;
+static fixed_t load_avg = 0;
+
+/* Niceness of threads to other threads in 4.4BSD scheduler */
+static int nice;
 
 /* Stack frame for kernel_thread(). */
 struct kernel_thread_frame 
@@ -72,6 +76,8 @@ static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
+static void calculate_recent_cpu (void);
+static void calculate_load_avg (void);
 #ifdef USERPROG
 static bool is_user_mode (struct thread *);
 #endif
@@ -149,6 +155,12 @@ thread_tick (void)
 #endif
   else
     kernel_ticks++;
+
+  if (timer_ticks () % TIMER_FREQ == 0) {
+    /* Re-calculates load_avg and recent_cpu for each thread */
+    calculate_recent_cpu ();
+    calculate_load_avg ();
+  }
 
   /* Enforce preemption. */
   if (++thread_ticks >= TIME_SLICE)
@@ -614,6 +626,26 @@ allocate_tid (void)
   lock_release (&tid_lock);
 
   return tid;
+}
+
+static void
+calculate_recent_cpu (void) {
+  return;
+}
+
+static void
+calculate_load_avg (void) {
+  struct thread *cur = thread_current ();
+  fixed_t load_avg_frac = fp_div_int (fp_from_int (59), 60);
+  int ready_threads;
+
+  ready_threads = list_size (&ready_list);
+  if (cur != idle_thread)
+    ready_threads++;
+
+  // load_avg = (59/60)*load_avg + (1/60)*ready_threads
+  load_avg = fp_add (fp_mul (load_avg_frac, load_avg), 
+                     fp_div_int (ready_threads, 60));
 }
 
 /* Offset of `stack' member within `struct thread'.
