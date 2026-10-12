@@ -11,6 +11,7 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "threads/fixed-point.h"
 
 /* Random value for struct thread's `magic' member.
    Used to detect stack overflow.  See the big comment at the top
@@ -33,6 +34,10 @@ static struct thread *initial_thread;
 
 /* Lock used by allocate_tid(). */
 static struct lock tid_lock;
+
+/* System load average, estimates the average number of threads ready to run 
+   the past minute */
+static fixed_t load_avg;
 
 /* Stack frame for kernel_thread(). */
 struct kernel_thread_frame 
@@ -185,6 +190,10 @@ thread_create (const char *name, int priority,
   enum intr_level old_level;
 
   ASSERT (function != NULL);
+
+  // if thread_mlfqs == true, then INT PRIORITY should be ignored... 
+  // as well as any calls to `thread_set_priority()`, and `thread_get_priority()`
+  // should return the thread's current priority set by scheudler.
 
   /* Allocate thread. */
   t = palloc_get_page (PAL_ZERO);
