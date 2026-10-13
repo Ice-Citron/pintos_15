@@ -120,12 +120,15 @@ sema_up (struct semaphore *sema)
   ASSERT (sema != NULL);
 
   old_level = intr_disable ();
-  if (!list_empty (&sema->waiters))  { 
+  
+  
+  bool should_yield = false;
+  if (!list_empty(&sema->waiters))  { 
         
 
         /* Do some magic, to get the top priority element of the thread! */
 
-        struct list_elem* top_priority_thread_element = list_max(&sema->waiters, thread_elem_cmp_priority, &cmp_less_than);
+       struct list_elem* top_priority_thread_element = list_max(&sema->waiters, thread_elem_cmp_priority, &cmp_less_than);
 
         list_remove(top_priority_thread_element); /* Remove this element. */
 
@@ -136,11 +139,16 @@ sema_up (struct semaphore *sema)
         printf("I'm trying to unblock thread %s \n", top_priority_thread->name);
 
         thread_unblock (top_priority_thread); 
-        /* Now, let's refresh priorities. */
-
+        
+        /* Should we yield? */
+        should_yield = thread_get_priority() <= top_priority_thread->priority;
   }
   sema->value++;
   intr_set_level (old_level);
+
+  /* We've just upped our semaphore; 
+  Yield our execution if this thread's priority is higher than ours. */
+  if (should_yield) thread_yield();
 }
 
 static void sema_test_helper (void *sema_);
