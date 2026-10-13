@@ -369,6 +369,7 @@ thread_set_priority (int new_priority)
   bool should_yield = false;
   struct thread *cur;
 
+
   ASSERT (!intr_context ());
 
   if (thread_mlfqs || new_priority < PRI_MIN || new_priority > PRI_MAX)
@@ -400,6 +401,38 @@ int
 thread_get_priority (void) 
 {
   return thread_current ()->priority;
+}
+
+/* A simple comparison of priorities of two threads.
+
+When 'aux' is set to true, it returns whether 'A' priority is less than 'B' priority.
+Otherwise, if 'aux' is false, it returns whether 'A' priority is gte. 'B' priority.
+*/
+bool thread_cmp_priority(struct thread* thread_a, struct thread* thread_b, void* lte_or_gte) {
+  /* Now, compare their priorities. */
+  bool is_less = thread_a -> priority < thread_b -> priority;
+  
+  /* Return, based on AUX. */
+  return (*((bool*)lte_or_gte) ? is_less : (!is_less));
+}
+
+/*
+Compares the priorities of two threads by their list elements.
+'aux' here signifies whether to compare as "less", or "more".
+(i.e., whether to return true on when priority of 'A' is less or larger than priority of 'B'.)
+
+When 'aux' is set to true, it returns whether 'A' priority is less than 'B' priority.
+Otherwise, if 'aux' is false, it returns whether 'A' priority is gte. 'B' priority.
+*/
+bool 
+thread_elem_cmp_priority (const struct list_elem *a,       const struct list_elem *b,    void *aux) {
+  /* Here, we define 'aux' as whether to compare ascending or descending */
+  
+  /* Obtain the two threads. */
+  struct thread* thread_a = list_entry(a, struct thread, elem);
+  struct thread* thread_b = list_entry(b, struct thread, elem);
+
+  return thread_cmp_priority(thread_a, thread_b, aux);
 }
 
 /* Sets the current thread's nice value to NICE. */

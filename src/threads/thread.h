@@ -141,6 +141,17 @@ int thread_get_priority (void);
 void thread_set_priority (int);
 void thread_refresh_priority (struct thread *);
 
+
+bool thread_cmp_priority(struct thread* thread_a, struct thread* thread_b, void* aux);
+bool thread_elem_cmp_priority (const struct list_elem *a,       const struct list_elem *b,    void *aux);
+
+
+/* 
+Boolean values for sorting of lists and comparisons of threads by priority.
+*/ 
+static bool cmp_less_than = true;
+static bool cmp_greater_than = false;
+
 int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);

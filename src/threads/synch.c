@@ -68,7 +68,14 @@ sema_down (struct semaphore *sema)
   old_level = intr_disable ();
   while (sema->value == 0) 
     {
-      list_push_back (&sema->waiters, &thread_current ()->elem);
+      /* Insert the thread, with the largest priority, into the queue first;
+      Ensuring that the queue is sorted from biggest priority, down to smallest. */
+      
+      struct thread* thread_curr = thread_current();
+
+      printf("I'm pushing current thread %s with priority %d into the wait queue\n", &thread_curr->name, thread_curr->priority);
+
+      list_insert_ordered(&sema->waiters, &thread_current ()->elem, thread_elem_cmp_priority, &cmp_greater_than);
       thread_block ();
     }
   sema->value--;
@@ -113,9 +120,25 @@ sema_up (struct semaphore *sema)
   ASSERT (sema != NULL);
 
   old_level = intr_disable ();
-  if (!list_empty (&sema->waiters)) 
-    thread_unblock (list_entry (list_pop_front (&sema->waiters),
-                                struct thread, elem));
+  if (!list_empty (&sema->waiters))  { 
+        
+
+        /* Do some magic, to get the top priority element of the thread! */
+
+        struct list_elem* top_priority_thread_element = list_max(&sema->waiters, thread_elem_cmp_priority, &cmp_less_than);
+
+        list_remove(top_priority_thread_element); /* Remove this element. */
+
+        struct thread* top_priority_thread = list_entry (top_priority_thread_element,
+                                struct thread, elem); 
+        
+        /* Unblock said top priority thread! */
+        printf("I'm trying to unblock thread %s \n", top_priority_thread->name);
+
+        thread_unblock (top_priority_thread); 
+        /* Now, let's refresh priorities. */
+
+  }
   sema->value++;
   intr_set_level (old_level);
 }
@@ -264,6 +287,34 @@ cond_init (struct condition *cond)
   list_init (&cond->waiters);
 }
 
+
+/*
+Compares the priorities of two waiting semaphore elements by the priority of the thread in their semaphore's waiting list with the largest priority.
+'aux' here signifies whether to compare as "less", or "more".
+(i.e., whether to return true on when priority of 'A' is less or larger than priority of 'B'.)
+
+When 'aux' is set to true, it returns whether 'A' priority is less than 'B' priority.
+Otherwise, if 'aux' is false, it returns whether 'A' priority is gte. 'B' priority.
+*/
+bool 
+sema_elem_cmp_priority (const struct list_elem *a,       const struct list_elem *b,    void *aux) {
+  /* Here, we define 'aux' as whether to compare ascending or descending */
+  
+  /* Obtain the two semaphores. */
+  struct semaphore* sema_a = &list_entry(a, struct semaphore_elem, elem)->semaphore;
+  struct semaphore* sema_b = &list_entry(b, struct semaphore_elem, elem)->semaphore;
+
+  /* Obtain the biggest priority thread; firstly, obtain the largest LIST element. */
+  struct list_elem* biggest_prithread_a_elem = list_max(&sema_a->waiters, thread_elem_cmp_priority, &cmp_less_than);
+  struct list_elem* biggest_prithread_b_elem = list_max(&sema_b->waiters, thread_elem_cmp_priority, &cmp_less_than);
+
+  /* Now, unwrap the list elements to get the threads. */
+  struct thread* biggest_prithread_a = list_entry(biggest_prithread_a_elem, struct thread, elem);
+  struct thread* biggest_prithread_b = list_entry(biggest_prithread_b_elem, struct thread, elem);
+
+  return thread_cmp_priority(biggest_prithread_a, biggest_prithread_b, aux);
+}
+
 /* Atomically releases LOCK and waits for COND to be signaled by
    some other piece of code.  After COND is signaled, LOCK is
    reacquired before returning.  LOCK must be held before calling
@@ -296,7 +347,7 @@ cond_wait (struct condition *cond, struct lock *lock)
   
   sema_init (&waiter.semaphore, 0);
   list_elem_init(&waiter.elem);
-  list_push_back (&cond->waiters, &waiter.elem);
+  list_insert_ordered (&cond->waiters, &waiter.elem,sema_elem_cmp_priority,&cmp_greater_than);
   lock_release (lock);
   sema_down (&waiter.semaphore);
   lock_acquire (lock);
@@ -316,10 +367,22 @@ cond_signal (struct condition *cond, struct lock *lock UNUSED)
   ASSERT (lock != NULL);
   ASSERT (!intr_context ());
   ASSERT (lock_held_by_current_thread (lock));
+ 
+  if (!list_empty (&cond->waiters)) {
 
-  if (!list_empty (&cond->waiters)) 
-    sema_up (&list_entry (list_pop_front (&cond->waiters),
-                          struct semaphore_elem, elem)->semaphore);
+    /* Get the top priority waiter. */
+
+    struct list_elem* top_priority_waiter_sema_element = list_max(&cond->waiters, sema_elem_cmp_priority, &cmp_less_than);
+
+    list_remove(top_priority_waiter_sema_element); /* Remove this element. */
+
+    /* Unwrap the element. */
+
+    struct semaphore_elem *top_priority_waiter_sema = list_entry (top_priority_waiter_sema_element,
+                          struct semaphore_elem, elem);
+
+    sema_up (&top_priority_waiter_sema->semaphore); 
+  } 
 }
 
 /* Wakes up all threads, if any, waiting on COND (protected by
