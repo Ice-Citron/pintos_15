@@ -71,6 +71,39 @@ static tid_t allocate_tid (void);
 static bool is_user_mode (struct thread *);
 #endif
 
+
+/* A simple comparison of priorities of two threads.
+
+When 'aux' is set to true, it returns whether 'A' priority is less than 'B' priority.
+Otherwise, if 'aux' is false, it returns whether 'A' priority is gte. 'B' priority.
+*/
+bool thread_cmp_priority(struct thread* thread_a, struct thread* thread_b, void* lte_or_gte) {
+  /* Now, compare their priorities. */
+  bool is_less = thread_a -> priority < thread_b -> priority;
+ 
+  /* Return, based on AUX. */
+  return (*((bool*)lte_or_gte) ? is_less : (!is_less));
+}
+
+/*
+Compares the priorities of two threads by their list elements.
+'aux' here signifies whether to compare as "less", or "more".
+(i.e., whether to return true on when priority of 'A' is less or larger than priority of 'B'.)
+
+When 'aux' is set to true, it returns whether 'A' priority is less than 'B' priority.
+Otherwise, if 'aux' is false, it returns whether 'A' priority is gte. 'B' priority.
+*/
+bool 
+thread_elem_cmp_priority (const struct list_elem *a,       const struct list_elem *b,    void *aux) {
+  /* Here, we define 'aux' as whether to compare ascending or descending */
+  
+  /* Obtain the two threads. */
+  struct thread* thread_a = list_entry(a, struct thread, elem);
+  struct thread* thread_b = list_entry(b, struct thread, elem);
+
+  return thread_cmp_priority(thread_a, thread_b, aux);
+}
+
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
    general and it is possible in this case only because loader.S
@@ -260,7 +293,8 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_push_back (&ready_list, &t->elem);
+  list_insert_ordered(&ready_list, &t->elem, thread_elem_cmp_priority, &cmp_greater_than);
+  // list_push_back (&ready_list, &t->elem);
   t->status = THREAD_READY;
   intr_set_level (old_level);
 }
@@ -326,8 +360,8 @@ thread_yield (void)
   ASSERT (!intr_context ());
 
   old_level = intr_disable ();
-  if (cur != idle_thread) 
-    list_push_back (&ready_list, &cur->elem);
+  if (cur != idle_thread)   list_insert_ordered(&ready_list, &cur->elem, thread_elem_cmp_priority, &cmp_greater_than);  
+  // list_push_back (&ready_list, &cur->elem);
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -405,38 +439,6 @@ int
 thread_get_priority (void) 
 {
   return thread_current ()->priority;
-}
-
-/* A simple comparison of priorities of two threads.
-
-When 'aux' is set to true, it returns whether 'A' priority is less than 'B' priority.
-Otherwise, if 'aux' is false, it returns whether 'A' priority is gte. 'B' priority.
-*/
-bool thread_cmp_priority(struct thread* thread_a, struct thread* thread_b, void* lte_or_gte) {
-  /* Now, compare their priorities. */
-  bool is_less = thread_a -> priority < thread_b -> priority;
- 
-  /* Return, based on AUX. */
-  return (*((bool*)lte_or_gte) ? is_less : (!is_less));
-}
-
-/*
-Compares the priorities of two threads by their list elements.
-'aux' here signifies whether to compare as "less", or "more".
-(i.e., whether to return true on when priority of 'A' is less or larger than priority of 'B'.)
-
-When 'aux' is set to true, it returns whether 'A' priority is less than 'B' priority.
-Otherwise, if 'aux' is false, it returns whether 'A' priority is gte. 'B' priority.
-*/
-bool 
-thread_elem_cmp_priority (const struct list_elem *a,       const struct list_elem *b,    void *aux) {
-  /* Here, we define 'aux' as whether to compare ascending or descending */
-  
-  /* Obtain the two threads. */
-  struct thread* thread_a = list_entry(a, struct thread, elem);
-  struct thread* thread_b = list_entry(b, struct thread, elem);
-
-  return thread_cmp_priority(thread_a, thread_b, aux);
 }
 
 /* Sets the current thread's nice value to NICE. */
@@ -601,8 +603,13 @@ next_thread_to_run (void)
 {
   if (list_empty (&ready_list))
     return idle_thread;
-  else
-    return list_entry (list_pop_front (&ready_list), struct thread, elem);
+  else {
+    /* Obtain the top priority thread element. */
+    struct list_elem*  top_priority_thread_elem = list_max(&ready_list, thread_elem_cmp_priority, &cmp_less_than);
+    /* Now, pop said element. */
+    list_remove(top_priority_thread_elem);
+    return list_entry (top_priority_thread_elem, struct thread, elem); 
+  }
 }
 
 /* Completes a thread switch by activating the new thread's page
