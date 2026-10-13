@@ -702,6 +702,7 @@ static void
 update_thread_priority (struct thread *t, void *aux UNUSED) {
   if (t == idle_thread)
     return;
+    
   // priority = PRI_MAX - (recent_cpu / 4) - (nice * 2)
   fixed_t penalty = fp_add_int (fp_div_int (t->recent_cpu, 4), t->nice * 2);
   t->priority = fp_to_int_trunc (fp_sub (fp_from_int (PRI_MAX), penalty));
