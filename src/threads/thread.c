@@ -78,6 +78,7 @@ void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 static void calculate_recent_cpu (void);
 static void calculate_load_avg (void);
+static void update_thread_recent_cpu (struct thread *t, void *aux);
 #ifdef USERPROG
 static bool is_user_mode (struct thread *);
 #endif
@@ -506,6 +507,7 @@ thread_init (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
+  t->recent_cpu = 0;
 #ifdef USERPROG
   t->process = NULL;
 #endif   
@@ -630,7 +632,7 @@ allocate_tid (void)
 
 static void
 calculate_recent_cpu (void) {
-  return;
+  thread_foreach (update_thread_recent_cpu, NULL);
 }
 
 static void
@@ -638,14 +640,23 @@ calculate_load_avg (void) {
   struct thread *cur = thread_current ();
   fixed_t load_avg_frac = fp_div_int (fp_from_int (59), 60);
   int ready_threads;
-
+  
   ready_threads = list_size (&ready_list);
   if (cur != idle_thread)
-    ready_threads++;
-
+  ready_threads++;
+  
   // load_avg = (59/60)*load_avg + (1/60)*ready_threads
   load_avg = fp_add (fp_mul (load_avg_frac, load_avg), 
-                     fp_div_int (ready_threads, 60));
+  fp_div_int (ready_threads, 60));
+}
+
+static void
+update_thread_recent_cpu (struct thread *t, void *aux) {
+  fixed_t load_avg_coeff = fp_div (fp_mul_int (load_avg, 2), 
+                                   fp_add_int (fp_mul_int (load_avg, 2), 1));
+  
+  // recent_cpu = (2*load_avg) / (2*load_avg + 1) * recent_cpu + nice
+  t->recent_cpu = fp_add_int (fp_mul(load_avg_coeff, t->recent_cpu), 1);
 }
 
 /* Offset of `stack' member within `struct thread'.
