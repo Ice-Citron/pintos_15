@@ -220,6 +220,10 @@ thread_create (const char *name, int priority,
   /* Add to run queue. */
   thread_unblock (t);
 
+  /* We've just created a new thread; 
+  Yield our execution if this thread's priority is higher than ours. */
+  if (thread_get_priority() <= t->priority)
+    thread_yield();
   return tid;
 }
 
@@ -411,7 +415,7 @@ Otherwise, if 'aux' is false, it returns whether 'A' priority is gte. 'B' priori
 bool thread_cmp_priority(struct thread* thread_a, struct thread* thread_b, void* lte_or_gte) {
   /* Now, compare their priorities. */
   bool is_less = thread_a -> priority < thread_b -> priority;
-  
+ 
   /* Return, based on AUX. */
   return (*((bool*)lte_or_gte) ? is_less : (!is_less));
 }
