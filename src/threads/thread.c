@@ -40,9 +40,6 @@ static struct lock tid_lock;
    the past minute */
 static fixed_t load_avg = 0;
 
-/* Niceness of threads to other threads in 4.4BSD scheduler */
-static int nice;
-
 /* Stack frame for kernel_thread(). */
 struct kernel_thread_frame 
   {
@@ -386,31 +383,31 @@ thread_get_priority (void)
 void
 thread_set_nice (int nice UNUSED) 
 {
-  /* Not yet implemented. */
+  struct thread *cur = thread_current ();
+  cur->nice = nice;
 }
 
 /* Returns the current thread's nice value. */
 int
 thread_get_nice (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  struct thread *cur = thread_current ();
+  return cur->nice;
 }
 
 /* Returns 100 times the system load average. */
 int
 thread_get_load_avg (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return fp_to_int_round (fp_mul_int (load_avg, 100));
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int
 thread_get_recent_cpu (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  struct thread *cur = thread_current ();
+  return fp_to_int_round (fp_mul_int (cur->recent_cpu, 100));
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
@@ -507,7 +504,14 @@ thread_init (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
+  t->nice = 0;
   t->recent_cpu = 0;
+  if (thread_mlfqs && t != initial_thread) 
+    {
+      struct thread *parent = thread_current ();
+      t->nice = parent->nice;
+      t->recent_cpu = parent->recent_cpu;
+    }
 #ifdef USERPROG
   t->process = NULL;
 #endif   
@@ -630,11 +634,13 @@ allocate_tid (void)
   return tid;
 }
 
+/* Calculate latest `recent_cpu` once per TIMER_FREQ timer ticks. */
 static void
 calculate_recent_cpu (void) {
   thread_foreach (update_thread_recent_cpu, NULL);
 }
 
+/* Calculate latest `load_avg` once per TIMER_FREQ timer ticks. */
 static void
 calculate_load_avg (void) {
   struct thread *cur = thread_current ();
@@ -650,6 +656,8 @@ calculate_load_avg (void) {
   fp_div_int (ready_threads, 60));
 }
 
+/* Pass in as function pointer of type `thread_action_func` to calculate 
+   each thread's recent_cpu */
 static void
 update_thread_recent_cpu (struct thread *t, void *aux) {
   fixed_t load_avg_coeff = fp_div (fp_mul_int (load_avg, 2), 

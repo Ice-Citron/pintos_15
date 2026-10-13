@@ -93,6 +93,7 @@ struct thread
     char name[16];                      /* Name (for debugging purposes). */
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
+    int nice;                           /* Niceness of thread to other threads */
     fixed_t recent_cpu;                 /* Thread recent CPU time usage amount */
     struct list_elem allelem;           /* List element for all threads list. */
     
