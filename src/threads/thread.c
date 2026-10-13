@@ -154,11 +154,17 @@ thread_tick (void)
   else
     kernel_ticks++;
 
-  if (timer_ticks () % TIMER_FREQ == 0) {
-    /* Re-calculates load_avg and recent_cpu for each thread */
-    calculate_recent_cpu ();
-    calculate_load_avg ();
-  }
+  if (thread_mlfqs) 
+    {
+      if (t != idle_thread)
+        t->recent_cpu = fp_add_int (t->recent_cpu, 1);
+      if (timer_ticks () % TIMER_FREQ == 0) 
+        {
+          /* Re-calculates load_avg and recent_cpu for each thread */
+          calculate_recent_cpu ();
+          calculate_load_avg ();
+        }
+    }
 
   /* Enforce preemption. */
   if (++thread_ticks >= TIME_SLICE)
@@ -649,11 +655,11 @@ calculate_load_avg (void) {
   
   ready_threads = list_size (&ready_list);
   if (cur != idle_thread)
-  ready_threads++;
+    ready_threads++;
   
   // load_avg = (59/60)*load_avg + (1/60)*ready_threads
   load_avg = fp_add (fp_mul (load_avg_frac, load_avg), 
-  fp_div_int (ready_threads, 60));
+                     fp_div_int (ready_threads, 60));
 }
 
 /* Pass in as function pointer of type `thread_action_func` to calculate 
