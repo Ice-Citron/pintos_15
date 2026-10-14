@@ -149,7 +149,10 @@ sema_up (struct semaphore *sema)
 
   /* We've just upped our semaphore; 
   Yield our execution if this thread's priority is higher than ours. */
-  if (should_yield) thread_yield();
+  if (should_yield) {
+    if (intr_context()) intr_yield_on_return() ;
+    else thread_yield();
+     }
 }
 
 static void sema_test_helper (void *sema_);
