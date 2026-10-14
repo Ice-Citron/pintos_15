@@ -403,7 +403,7 @@ thread_get_priority (void)
 
 /* Sets the current thread's nice value to NICE. */
 void
-thread_set_nice (int nice UNUSED) 
+thread_set_nice (int nice) 
 {
   enum intr_level old_level;
   struct thread *cur = thread_current ();
@@ -562,9 +562,9 @@ thread_init (struct thread *t, const char *name, int priority)
           t->recent_cpu = parent->recent_cpu;
         }
       
-        /* In BSD mode, ignore PRIORITY function param and calculate priority 
-           instead */
-        update_thread_priority (t, NULL);
+      /* In BSD mode, ignore PRIORITY function param and calculate priority 
+          instead */
+      update_thread_priority (t, NULL);
     }
 #ifdef USERPROG
   t->process = NULL;
@@ -690,7 +690,8 @@ allocate_tid (void)
 
 /* Calculate latest `recent_cpu` once per TIMER_FREQ timer ticks. */
 static void
-calculate_recent_cpu (void) {
+calculate_recent_cpu (void) 
+{
   fixed_t load_avg_coeff = fp_div (fp_mul_int (load_avg, 2), 
                                    fp_add_int (fp_mul_int (load_avg, 2), 1));
   thread_foreach (&update_thread_recent_cpu, &load_avg_coeff);
@@ -730,7 +731,8 @@ update_thread_recent_cpu (struct thread *t, void *aux)
 /* Pass in as function pointer of type `thread_action_func` for calculating
    each thread's priority every PRIORITY_PERIOD (4) ticks */
 static void
-update_thread_priority (struct thread *t, void *aux UNUSED) {
+update_thread_priority (struct thread *t, void *aux UNUSED) 
+{
   if (t == idle_thread)
     return;
 
