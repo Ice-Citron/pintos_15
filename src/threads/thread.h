@@ -95,9 +95,12 @@ struct thread
     int base_priority;                  /* Priority chosen by the thread. */
     int donated_priority;               /* Highest active donation or PRI_MIN */
     struct list_elem allelem;           /* List element for all threads list. */
-
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
+
+    /* Section for lock priority donation. */
+    struct list held_locks;             /* Container to hold locks that I hold. */
+    struct lock* waiting_on;   /* Lock which I am waiting on. */
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
