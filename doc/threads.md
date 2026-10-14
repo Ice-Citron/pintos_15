@@ -118,6 +118,8 @@ ADVANTAGE:
   updating the current thread's priority every `PRIORITY_PERIOD` (4 ticks) also
   takes O(1) time.
 DISADVANTAGE:
-- `thread_set_nice` in `thread.c` disables interrupts as it walks across 
+- In `thread.c`'s `thread_set_nice`, it disables interrupts as it walks across 
   `ready_list`, this walk takes O(n) time where the interrupts are disabled.
-- 
+- In `thread.c`'s `calculate_load_avg` which is called once per `TIMER_FREQ` 
+  ticks by `thread_tick`. `calculate_load_avg` uses `list_size (&ready_list);`
+  which takes O(n) time complexity to traverse through `&ready_list`.
