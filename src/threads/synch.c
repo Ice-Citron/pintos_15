@@ -75,7 +75,8 @@ sema_down (struct semaphore *sema)
 
       printf("I'm pushing current thread %s with priority %d into the wait queue\n", &thread_curr->name, thread_curr->priority);
 
-      list_insert_ordered(&sema->waiters, &thread_current ()->elem, thread_elem_cmp_priority, &cmp_greater_than);
+      list_push_back(&sema->waiters, &thread_current()->elem);
+      // list_insert_ordered(&sema->waiters, &thread_current ()->elem, thread_elem_cmp_priority, &cmp_greater_than);
       thread_block ();
     }
   sema->value--;
@@ -404,7 +405,8 @@ cond_wait (struct condition *cond, struct lock *lock)
   
   sema_init (&waiter.semaphore, 0);
   list_elem_init(&waiter.elem);
-  list_insert_ordered (&cond->waiters, &waiter.elem,sema_elem_cmp_priority,&cmp_greater_than);
+  list_push_back(&cond->waiters,&waiter.elem);
+  // list_insert_ordered (&cond->waiters, &waiter.elem,sema_elem_cmp_priority,&cmp_greater_than);
   lock_release (lock);
   sema_down (&waiter.semaphore);
   lock_acquire (lock);
