@@ -568,6 +568,11 @@ thread_init (struct thread *t, const char *name, int priority)
   t->priority = priority;
   t->base_priority = priority;
   t->donated_priority = PRI_MIN;
+
+  /* I'm not waiting on any lock currently.  Let's set up the apparatus first. */
+  t->waiting_on = NULL;
+  list_init(&t->held_locks);
+
 #ifdef USERPROG
   t->process = NULL;
 #endif   
