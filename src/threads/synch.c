@@ -227,8 +227,42 @@ lock_acquire (struct lock *lock)
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
+  struct thread* curr_thread = thread_current ();
+
+  /* Critical section, disable interrupts! 
+  We need this to be able to donate the priorities without pre-emption.
+  */
+  enum intr_level old_level = intr_disable();
+
+ /* Donate our priorities BEFORE we down the semaphore. */
+ if (!thread_mlfqs && lock->holder != NULL) {
+    /* Then, we're waiting on the lock's holder. */
+    curr_thread->waiting_on = lock;
+    /* This section handles nested priority donations; donate down the chain. */
+    struct lock* curr_waiting_lock = curr_thread->waiting_on;
+    while (curr_waiting_lock != NULL) {
+      /* Who's holding the lock I'm waiting on?*/
+
+      struct thread* curr_waiting_lock_holder = curr_waiting_lock->holder;
+
+      /* Now, update the priority of the current donation thread.*/
+      
+      if (curr_waiting_lock_holder->priority < curr_thread->priority) curr_waiting_lock_holder->priority = curr_thread->priority;
+
+      /* Update complete. */
+
+      curr_waiting_lock = curr_waiting_lock_holder->waiting_on;
+      /* Now, who's the next guy up the chain? */
+    }
+ }
+
+ intr_set_level(old_level);
+/* End of the critical section, re-enable interrupts. */
   sema_down (&lock->semaphore);
-  lock->holder = thread_current ();
+  curr_thread->waiting_on = NULL; // I'm not waiting on any lock because I've already got it.
+  lock->holder = curr_thread;
+  list_push_back(&curr_thread->held_locks, &lock->elem);
+  /* Store the list of held locks, so I know that I'm holding it. */
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
@@ -246,8 +280,12 @@ lock_try_acquire (struct lock *lock)
   ASSERT (!lock_held_by_current_thread (lock));
 
   success = sema_try_down (&lock->semaphore);
-  if (success)
-    lock->holder = thread_current ();
+  if (success) {
+    struct thread* curr_thread = thread_current ();
+    lock->holder = curr_thread;
+    list_push_back(&curr_thread->held_locks, &lock->elem);
+    /* Store the list of held locks, so I know that I'm holding it. */
+  }
   return success;
 }
 
