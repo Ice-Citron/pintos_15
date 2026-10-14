@@ -167,19 +167,22 @@ thread_tick (void)
       if (t != idle_thread)
         t->recent_cpu = fp_add_int (t->recent_cpu, 1);
       
-      /* Recalculates each thread's recent_cpu and load_avg every TIMER_FREQ ticks*/
+      /* Recalculates each thread's recent_cpu and load_avg every TIMER_FREQ 
+         ticks*/
       if (timer_ticks () % TIMER_FREQ == 0) 
         {
           calculate_load_avg ();
           calculate_recent_cpu ();
+          /* Recalculates all thread in all_list's priority as load_avg and 
+             recent_cpu has just been updated */
+          thread_foreach (&update_thread_priority, NULL);
         }
-      
-      /* Recalculates running thread's priority every 4 ticks */
-      if (timer_ticks () % PRIORITY_PERIOD == 0)
+      else if (timer_ticks () % PRIORITY_PERIOD == 0)
         {
-          thread_foreach(&update_thread_priority, NULL);
+          /* Recalculates only the running thread's priority every 4 ticks */
+          update_thread_priority (t, NULL);
         }
-      }
+    }
 
   /* Enforce preemption. */
   if (++thread_ticks >= TIME_SLICE)
@@ -221,10 +224,6 @@ thread_create (const char *name, int priority,
   enum intr_level old_level;
 
   ASSERT (function != NULL);
-
-  // if thread_mlfqs == true, then INT PRIORITY should be ignored... 
-  // as well as any calls to `thread_set_priority()`, and `thread_get_priority()`
-  // should return the thread's current priority set by scheudler.
 
   /* Allocate thread. */
   t = palloc_get_page (PAL_ZERO);
@@ -406,7 +405,11 @@ thread_get_priority (void)
 void
 thread_set_nice (int nice UNUSED) 
 {
+  enum intr_level old_level;
   struct thread *cur = thread_current ();
+  bool yield_needed = false;
+
+  old_level = intr_disable ();
   cur->nice = nice;
   if (thread_mlfqs)
     {
@@ -415,15 +418,20 @@ thread_set_nice (int nice UNUSED)
 
   /* If running thread no longer has the highest priority, yields */
   for (struct list_elem *elem = list_begin (&ready_list); 
-       elem != list_tail(&ready_list); elem = list_next(elem))
+       elem != list_end (&ready_list); elem = list_next (elem))
     {
       struct thread *elem_thread = list_entry (elem, struct thread, elem);
       if (elem_thread->priority > cur->priority)
         {
-          thread_yield(); 
+          yield_needed = true;
           break;
         }
     }
+
+  intr_set_level (old_level);
+
+  if (yield_needed)
+    thread_yield ();
 }
 
 /* Returns the current thread's nice value. */
@@ -554,11 +562,9 @@ thread_init (struct thread *t, const char *name, int priority)
           t->recent_cpu = parent->recent_cpu;
         }
       
-        /* In BSD mode, ignore priority parameter and calculate priority instead 
-         Formula: priority = PRI_MAX - (recent_cpu / 4) - (nice * 2) */
-      fixed_t penalty = fp_add_int (fp_div_int (t->recent_cpu, 4), t->nice * 2);
-      t->priority = fp_to_int_trunc (fp_sub (fp_from_int (PRI_MAX), penalty));
-      t->priority = MAX(PRI_MIN, MIN(t->priority, PRI_MAX));
+        /* In BSD mode, ignore PRIORITY function param and calculate priority 
+           instead */
+        update_thread_priority (t, NULL);
     }
 #ifdef USERPROG
   t->process = NULL;
@@ -685,7 +691,9 @@ allocate_tid (void)
 /* Calculate latest `recent_cpu` once per TIMER_FREQ timer ticks. */
 static void
 calculate_recent_cpu (void) {
-  thread_foreach (update_thread_recent_cpu, NULL);
+  fixed_t load_avg_coeff = fp_div (fp_mul_int (load_avg, 2), 
+                                   fp_add_int (fp_mul_int (load_avg, 2), 1));
+  thread_foreach (&update_thread_recent_cpu, &load_avg_coeff);
 }
 
 /* Calculate latest `load_avg` once per TIMER_FREQ timer ticks. */
@@ -700,7 +708,7 @@ calculate_load_avg (void)
   if (cur != idle_thread)
     ready_threads++;
   
-  // load_avg = (59/60)*load_avg + (1/60)*ready_threads
+  /* load_avg = (59/60)*load_avg + (1/60)*ready_threads */
   load_avg = fp_add (fp_mul (load_avg_frac, load_avg), 
                      fp_div_int (fp_from_int (ready_threads), 60));
 }
@@ -708,17 +716,15 @@ calculate_load_avg (void)
 /* Pass in as function pointer of type `thread_action_func` to calculate 
    each thread's recent_cpu */
 static void
-update_thread_recent_cpu (struct thread *t, void *aux UNUSED)
+update_thread_recent_cpu (struct thread *t, void *aux)
 {
-  fixed_t load_avg_coeff;
+  fixed_t load_avg_coeff = *(fixed_t *) aux;
 
   if (t == idle_thread)
     return;
 
-  load_avg_coeff = fp_div (fp_mul_int (load_avg, 2), 
-                           fp_add_int (fp_mul_int (load_avg, 2), 1));
-  // recent_cpu = (2*load_avg) / (2*load_avg + 1) * recent_cpu + nice
-  t->recent_cpu = fp_add_int (fp_mul(load_avg_coeff, t->recent_cpu), t->nice);
+  /* recent_cpu = (2*load_avg) / (2*load_avg + 1) * recent_cpu + nice */
+  t->recent_cpu = fp_add_int (fp_mul (load_avg_coeff, t->recent_cpu), t->nice);
 }
 
 /* Pass in as function pointer of type `thread_action_func` for calculating
@@ -731,7 +737,7 @@ update_thread_priority (struct thread *t, void *aux UNUSED) {
   /* priority = PRI_MAX - (recent_cpu / 4) - (nice * 2) */
   fixed_t penalty = fp_add_int (fp_div_int (t->recent_cpu, 4), t->nice * 2);
   t->priority = fp_to_int_trunc (fp_sub (fp_from_int (PRI_MAX), penalty));
-  t->priority = MAX(PRI_MIN, MIN(t->priority, PRI_MAX));
+  t->priority = MAX (PRI_MIN, MIN (t->priority, PRI_MAX));
 }
 
 /* Offset of `stack' member within `struct thread'.

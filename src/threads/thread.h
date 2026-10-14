@@ -96,11 +96,10 @@ struct thread
     int nice;                           /* Niceness of thread to other threads */
     fixed_t recent_cpu;                 /* Thread recent CPU time usage amount */
     struct list_elem allelem;           /* List element for all threads list. */
-    
+
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
     
-
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     struct process *process;            /* Pointer to process running this thread. */
