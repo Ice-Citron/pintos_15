@@ -393,8 +393,17 @@ thread_refresh_priority (struct thread *t)
   if (!thread_mlfqs)
     {
       ASSERT (t->base_priority >= PRI_MIN && t->base_priority <= PRI_MAX);
-      ASSERT (t->donated_priority >= PRI_MIN && t->donated_priority <= PRI_MAX);
-      t->priority = t->base_priority > t->donated_priority ? t->base_priority : t->donated_priority;
+      t->priority = t->base_priority;
+      for(struct list_elem* lock_el = list_begin(&t->held_locks); lock_el!=list_end(&t->held_locks);lock_el=list_next(lock_el)) {
+        /* Get the current lock that I am holding! */
+        struct lock* current_lock = list_entry(lock_el, struct lock, elem);
+        /* Now, for all of the waiters in this lock, find its priority. */
+        for (struct list_elem* waiter_el=list_begin(&current_lock->semaphore.waiters); waiter_el!=list_end(&current_lock->semaphore.waiters);waiter_el=list_next(waiter_el)) {
+          struct thread* curr_waiting_thread = list_entry(waiter_el, struct thread, elem);
+          if (curr_waiting_thread->priority >= t->priority) t->priority = curr_waiting_thread->priority;
+        }
+      }
+      /* What this does, is  it grabs the top priority among all the waiters of the lock it holds. */
     }
 }
 
