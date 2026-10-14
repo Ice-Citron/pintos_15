@@ -73,7 +73,7 @@ sema_down (struct semaphore *sema)
       
       struct thread* thread_curr = thread_current();
 
-      printf("I'm pushing current thread %s with priority %d into the wait queue\n", &thread_curr->name, thread_curr->priority);
+    //  printf("I'm pushing current thread %s with priority %d into the wait queue\n", &thread_curr->name, thread_curr->priority);
 
       list_push_back(&sema->waiters, &thread_current()->elem);
       // list_insert_ordered(&sema->waiters, &thread_current ()->elem, thread_elem_cmp_priority, &cmp_greater_than);
@@ -137,7 +137,7 @@ sema_up (struct semaphore *sema)
                                 struct thread, elem); 
         
         /* Unblock said top priority thread! */
-        printf("I'm trying to unblock thread %s \n", top_priority_thread->name);
+        // printf("I'm trying to unblock thread %s \n", top_priority_thread->name);
 
         thread_unblock (top_priority_thread); 
         
