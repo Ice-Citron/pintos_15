@@ -142,7 +142,7 @@ sema_up (struct semaphore *sema)
         thread_unblock (top_priority_thread); 
         
         /* Should we yield? */
-        should_yield = thread_get_priority() <= top_priority_thread->priority;
+        should_yield = thread_get_priority() < top_priority_thread->priority;
   }
   sema->value++;
   intr_set_level (old_level);
