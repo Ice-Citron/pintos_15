@@ -7,22 +7,22 @@
 
 /* States in a thread's life cycle. */
 enum thread_status
-  {
-    THREAD_RUNNING,     /* Running thread. */
-    THREAD_READY,       /* Not running but ready to run. */
-    THREAD_BLOCKED,     /* Waiting for an event to trigger. */
-    THREAD_DYING        /* About to be destroyed. */
-  };
+{
+  THREAD_RUNNING, /* Running thread. */
+  THREAD_READY,   /* Not running but ready to run. */
+  THREAD_BLOCKED, /* Waiting for an event to trigger. */
+  THREAD_DYING    /* About to be destroyed. */
+};
 
 /* Thread identifier type.
    You can redefine this to whatever type you like. */
 typedef int tid_t;
-#define TID_ERROR ((tid_t) -1)          /* Error value for tid_t. */
+#define TID_ERROR ((tid_t) - 1) /* Error value for tid_t. */
 
 /* Thread priorities. */
-#define PRI_MIN 0                       /* Lowest priority. */
-#define PRI_DEFAULT 31                  /* Default priority. */
-#define PRI_MAX 63                      /* Highest priority. */
+#define PRI_MIN 0      /* Lowest priority. */
+#define PRI_DEFAULT 31 /* Default priority. */
+#define PRI_MAX 63     /* Highest priority. */
 
 #ifdef USERPROG
 #include "userprog/process.h"
@@ -85,31 +85,31 @@ typedef int tid_t;
    ready state is on the run queue, whereas only a thread in the
    blocked state is on a semaphore wait list. */
 struct thread
-  {
-    /* Owned by thread.c. */
-    tid_t tid;                          /* Thread identifier. */
-    enum thread_status status;          /* Thread state. */
-    char name[16];                      /* Name (for debugging purposes). */
-    uint8_t *stack;                     /* Saved stack pointer. */
-    int priority;                       /* Effective Priority. */
-    int base_priority;                  /* Priority chosen by the thread. */
-    int donated_priority;               /* Highest active donation or PRI_MIN */
-    struct list_elem allelem;           /* List element for all threads list. */
-    /* Shared between thread.c and synch.c. */
-    struct list_elem elem;              /* List element. */
+{
+  /* Owned by thread.c. */
+  tid_t tid;                 /* Thread identifier. */
+  enum thread_status status; /* Thread state. */
+  char name[16];             /* Name (for debugging purposes). */
+  uint8_t *stack;            /* Saved stack pointer. */
+  int priority;              /* Effective Priority. */
+  int base_priority;         /* Priority chosen by the thread. */
+  int donated_priority;      /* Highest active donation or PRI_MIN */
+  struct list_elem allelem;  /* List element for all threads list. */
+  /* Shared between thread.c and synch.c. */
+  struct list_elem elem; /* List element. */
 
-    /* Section for lock priority donation. */
-    struct list held_locks;             /* Container to hold locks that I hold. */
-    struct lock* waiting_on;   /* Lock which I am waiting on. */
+  /* Section for lock priority donation. */
+  struct list held_locks;  /* Container to hold locks that I hold. */
+  struct lock *waiting_on; /* Lock which I am waiting on. */
 
 #ifdef USERPROG
-    /* Owned by userprog/process.c. */
-    struct process *process;            /* Pointer to process running this thread. */
+  /* Owned by userprog/process.c. */
+  struct process *process; /* Pointer to process running this thread. */
 #endif
 
-    /* Owned by thread.c. */
-    unsigned magic;                     /* Detects stack overflow. */
-  };
+  /* Owned by thread.c. */
+  unsigned magic; /* Detects stack overflow. */
+};
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
@@ -118,7 +118,7 @@ extern bool thread_mlfqs;
 
 void threading_init (void);
 void threading_start (void);
-size_t threads_ready(void);
+size_t threads_ready (void);
 
 void thread_tick (void);
 void thread_print_stats (void);
@@ -144,14 +144,14 @@ int thread_get_priority (void);
 void thread_set_priority (int);
 void thread_refresh_priority (struct thread *);
 
+bool thread_cmp_priority (struct thread *thread_a, struct thread *thread_b,
+                          void *aux);
+bool thread_elem_cmp_priority (const struct list_elem *a,
+                               const struct list_elem *b, void *aux);
 
-bool thread_cmp_priority(struct thread* thread_a, struct thread* thread_b, void* aux);
-bool thread_elem_cmp_priority (const struct list_elem *a,       const struct list_elem *b,    void *aux);
-
-
-/* 
+/*
 Boolean values for sorting of lists and comparisons of threads by priority.
-*/ 
+*/
 static bool cmp_less_than = true;
 static bool cmp_greater_than = false;
 
