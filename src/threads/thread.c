@@ -408,9 +408,12 @@ thread_set_nice (int nice UNUSED)
 {
   struct thread *cur = thread_current ();
   cur->nice = nice;
-  update_thread_priority (cur, NULL);
+  if (thread_mlfqs)
+    {
+      update_thread_priority (cur, NULL);
+    }
 
-  /* If running thread no longer heas the highest priority, yields */
+  /* If running thread no longer has the highest priority, yields */
   for (struct list_elem *elem = list_begin (&ready_list); 
        elem != list_tail(&ready_list); elem = list_next(elem))
     {
@@ -418,6 +421,7 @@ thread_set_nice (int nice UNUSED)
       if (elem_thread->priority > cur->priority)
         {
           thread_yield(); 
+          break;
         }
     }
 }
@@ -541,13 +545,16 @@ thread_init (struct thread *t, const char *name, int priority)
   t->priority = priority;
   t->nice = 0;
   t->recent_cpu = 0;
-  if (thread_mlfqs && t != initial_thread) 
+  if (thread_mlfqs) 
     {
-      struct thread *parent = thread_current ();
-      t->nice = parent->nice;
-      t->recent_cpu = parent->recent_cpu;
-
-      /* In BSD mode, ignore priority parameter and calculate priority instead 
+      if (t != initial_thread)
+        {
+          struct thread *parent = thread_current ();
+          t->nice = parent->nice;
+          t->recent_cpu = parent->recent_cpu;
+        }
+      
+        /* In BSD mode, ignore priority parameter and calculate priority instead 
          Formula: priority = PRI_MAX - (recent_cpu / 4) - (nice * 2) */
       fixed_t penalty = fp_add_int (fp_div_int (t->recent_cpu, 4), t->nice * 2);
       t->priority = fp_to_int_trunc (fp_sub (fp_from_int (PRI_MAX), penalty));
