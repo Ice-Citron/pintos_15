@@ -300,7 +300,18 @@ lock_release (struct lock *lock)
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
 
+  /* Critical Section! Remove this element from the list.*/
+  enum intr_level old_level = intr_disable();
+
+  /* Remove the current lock from the holding thread's held locks list. */
+  list_remove(&lock->elem);
+
+  /* Refresh my priorities, because my donation is expired. */
+  thread_refresh_priority(thread_current());
+
   lock->holder = NULL;
+  intr_set_level(old_level);
+  /* End of the critical section. */
   sema_up (&lock->semaphore);
 }
 
