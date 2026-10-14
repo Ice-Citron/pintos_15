@@ -71,21 +71,14 @@ static tid_t allocate_tid (void);
 static bool is_user_mode (struct thread *);
 #endif
 
-/* A simple comparison of priorities of two threads.
-
-When 'aux' is set to true, it returns whether 'A' priority is less than 'B'
-priority. Otherwise, if 'aux' is false, it returns whether 'A' priority is gte.
-'B' priority.
-*/
+/* A simple comparison of priorities of two threads. */
 bool
-thread_cmp_priority (struct thread *thread_a, struct thread *thread_b,
-                     void *lte_or_gte)
+thread_cmp_priority (struct thread *thread_a, struct thread *thread_b)
 {
   /* Now, compare their priorities. */
   bool is_less = thread_a->priority < thread_b->priority;
 
-  /* Return, based on AUX. */
-  return (*((bool *)lte_or_gte) ? is_less : (!is_less));
+  return is_less;
 }
 
 /*
@@ -100,7 +93,7 @@ priority. Otherwise, if 'aux' is false, it returns whether 'A' priority is gte.
 */
 bool
 thread_elem_cmp_priority (const struct list_elem *a, const struct list_elem *b,
-                          void *aux)
+                          void *aux UNUSED)
 {
   /* Here, we define 'aux' as whether to compare ascending or descending */
 
@@ -108,7 +101,7 @@ thread_elem_cmp_priority (const struct list_elem *a, const struct list_elem *b,
   struct thread *thread_a = list_entry (a, struct thread, elem);
   struct thread *thread_b = list_entry (b, struct thread, elem);
 
-  return thread_cmp_priority (thread_a, thread_b, aux);
+  return thread_cmp_priority (thread_a, thread_b);
 }
 
 /* Initializes the threading system by transforming the code
@@ -640,7 +633,7 @@ next_thread_to_run (void)
     {
       /* Obtain the top priority thread element. */
       struct list_elem *top_priority_thread_elem
-          = list_max (&ready_list, thread_elem_cmp_priority, &cmp_less_than);
+          = list_max (&ready_list, thread_elem_cmp_priority, NULL);
       /* Now, pop said element. */
       list_remove (top_priority_thread_elem);
       return list_entry (top_priority_thread_elem, struct thread, elem);

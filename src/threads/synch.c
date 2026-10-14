@@ -131,8 +131,8 @@ sema_up (struct semaphore *sema)
 
       /* Do some magic, to get the top priority element of the thread! */
 
-      struct list_elem *top_priority_thread_element = list_max (
-          &sema->waiters, thread_elem_cmp_priority, &cmp_less_than);
+      struct list_elem *top_priority_thread_element
+          = list_max (&sema->waiters, thread_elem_cmp_priority, NULL);
 
       list_remove (top_priority_thread_element); /* Remove this element. */
 
@@ -373,7 +373,7 @@ priority. Otherwise, if 'aux' is false, it returns whether 'A' priority is gte.
 */
 bool
 sema_elem_cmp_priority (const struct list_elem *a, const struct list_elem *b,
-                        void *aux)
+                        void *aux UNUSED)
 {
   /* Here, we define 'aux' as whether to compare ascending or descending */
 
@@ -386,9 +386,9 @@ sema_elem_cmp_priority (const struct list_elem *a, const struct list_elem *b,
   /* Obtain the biggest priority thread; firstly, obtain the largest LIST
    * element. */
   struct list_elem *biggest_prithread_a_elem
-      = list_max (&sema_a->waiters, thread_elem_cmp_priority, &cmp_less_than);
+      = list_max (&sema_a->waiters, thread_elem_cmp_priority, NULL);
   struct list_elem *biggest_prithread_b_elem
-      = list_max (&sema_b->waiters, thread_elem_cmp_priority, &cmp_less_than);
+      = list_max (&sema_b->waiters, thread_elem_cmp_priority, NULL);
 
   /* Now, unwrap the list elements to get the threads. */
   struct thread *biggest_prithread_a
@@ -396,7 +396,7 @@ sema_elem_cmp_priority (const struct list_elem *a, const struct list_elem *b,
   struct thread *biggest_prithread_b
       = list_entry (biggest_prithread_b_elem, struct thread, elem);
 
-  return thread_cmp_priority (biggest_prithread_a, biggest_prithread_b, aux);
+  return thread_cmp_priority (biggest_prithread_a, biggest_prithread_b);
 }
 
 /* Atomically releases LOCK and waits for COND to be signaled by
@@ -460,7 +460,7 @@ cond_signal (struct condition *cond, struct lock *lock UNUSED)
       /* Get the top priority waiter. */
 
       struct list_elem *top_priority_waiter_sema_element
-          = list_max (&cond->waiters, sema_elem_cmp_priority, &cmp_less_than);
+          = list_max (&cond->waiters, sema_elem_cmp_priority, NULL);
 
       list_remove (
           top_priority_waiter_sema_element); /* Remove this element. */
