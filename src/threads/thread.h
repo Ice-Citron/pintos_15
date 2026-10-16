@@ -144,7 +144,6 @@ int thread_get_priority (void);
 void thread_set_priority (int);
 void thread_refresh_priority (struct thread *);
 
-bool thread_cmp_priority (struct thread *thread_a, struct thread *thread_b);
 bool thread_elem_cmp_priority (const struct list_elem *a,
                                const struct list_elem *b, void *aux);
 

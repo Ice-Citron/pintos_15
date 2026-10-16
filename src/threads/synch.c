@@ -32,6 +32,10 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
+static bool sema_elem_cmp_priority (const struct list_elem *a, 
+                                    const struct list_elem *b, 
+                                    void *aux UNUSED);
+
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
    manipulating it:
@@ -339,44 +343,6 @@ cond_init (struct condition *cond)
   list_init (&cond->waiters);
 }
 
-/*
-Compares the priorities of two waiting semaphore elements by the priority of
-the thread in their semaphore's waiting list with the largest priority. 'aux'
-here signifies whether to compare as "less", or "more". (i.e., whether to
-return true on when priority of 'A' is less or larger than priority of 'B'.)
-
-When 'aux' is set to true, it returns whether 'A' priority is less than 'B'
-priority. Otherwise, if 'aux' is false, it returns whether 'A' priority is gte.
-'B' priority.
-*/
-bool
-sema_elem_cmp_priority (const struct list_elem *a, const struct list_elem *b,
-                        void *aux UNUSED)
-{
-  /* Here, we define 'aux' as whether to compare ascending or descending */
-
-  /* Obtain the two semaphores. */
-  struct semaphore *sema_a
-      = &list_entry (a, struct semaphore_elem, elem)->semaphore;
-  struct semaphore *sema_b
-      = &list_entry (b, struct semaphore_elem, elem)->semaphore;
-
-  /* Obtain the biggest priority thread; firstly, obtain the largest LIST
-   * element. */
-  struct list_elem *biggest_prithread_a_elem
-      = list_max (&sema_a->waiters, thread_elem_cmp_priority, NULL);
-  struct list_elem *biggest_prithread_b_elem
-      = list_max (&sema_b->waiters, thread_elem_cmp_priority, NULL);
-
-  /* Now, unwrap the list elements to get the threads. */
-  struct thread *biggest_prithread_a
-      = list_entry (biggest_prithread_a_elem, struct thread, elem);
-  struct thread *biggest_prithread_b
-      = list_entry (biggest_prithread_b_elem, struct thread, elem);
-
-  return thread_cmp_priority (biggest_prithread_a, biggest_prithread_b);
-}
-
 /* Atomically releases LOCK and waits for COND to be signaled by
    some other piece of code.  After COND is signaled, LOCK is
    reacquired before returning.  LOCK must be held before calling
@@ -454,4 +420,29 @@ cond_broadcast (struct condition *cond, struct lock *lock)
 
   while (!list_empty (&cond->waiters))
     cond_signal (cond, lock);
+}
+
+/* Returns true if the thread with highest priority that waits on semaphore_elem 
+   A has a lower priority than the thread with highest priority that waits on 
+   semaphore_elem B. 
+*/
+static bool
+sema_elem_cmp_priority (const struct list_elem *a, const struct list_elem *b,
+                        void *aux UNUSED)
+{
+  struct list *waiters_a, *waiters_b;
+  struct list_elem *highest_a, *highest_b;
+
+  waiters_a = &list_entry (a, struct semaphore_elem, elem)->semaphore.waiters;
+  waiters_b = &list_entry (b, struct semaphore_elem, elem)->semaphore.waiters;
+
+  if (list_empty (waiters_a))
+    return !list_empty (waiters_b);
+  if (list_empty (waiters_b))
+    return false;
+
+  highest_a = list_max (waiters_a, thread_elem_cmp_priority, NULL);
+  highest_b = list_max (waiters_b, thread_elem_cmp_priority, NULL);
+
+  return thread_elem_cmp_priority (highest_a, highest_b, NULL);
 }

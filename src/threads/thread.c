@@ -1,4 +1,9 @@
 #include "threads/thread.h"
+#include <debug.h>
+#include <random.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <string.h>
 #include "threads/flags.h"
 #include "threads/interrupt.h"
 #include "threads/intr-stubs.h"
@@ -6,11 +11,6 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
-#include <debug.h>
-#include <random.h>
-#include <stddef.h>
-#include <stdio.h>
-#include <string.h>
 
 /* Random value for struct thread's `magic' member.
    Used to detect stack overflow.  See the big comment at the top
@@ -67,40 +67,20 @@ static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
+static bool thread_cmp_priority (struct thread *thread_a, 
+                                 struct thread *thread_b);
 #ifdef USERPROG
 static bool is_user_mode (struct thread *);
 #endif
 
-/* A simple comparison of priorities of two threads. */
-bool
-thread_cmp_priority (struct thread *thread_a, struct thread *thread_b)
-{
-  /* Now, compare their priorities. */
-  bool is_less = thread_a->priority < thread_b->priority;
-
-  return is_less;
-}
-
-/*
-Compares the priorities of two threads by their list elements.
-'aux' here signifies whether to compare as "less", or "more".
-(i.e., whether to return true on when priority of 'A' is less or larger than
-priority of 'B'.)
-
-When 'aux' is set to true, it returns whether 'A' priority is less than 'B'
-priority. Otherwise, if 'aux' is false, it returns whether 'A' priority is gte.
-'B' priority.
-*/
+/* Compares the priorities of two threads. Returns true if thread_a has a lower 
+   priority than thread_b, false otherwise. */
 bool
 thread_elem_cmp_priority (const struct list_elem *a, const struct list_elem *b,
                           void *aux UNUSED)
 {
-  /* Here, we define 'aux' as whether to compare ascending or descending */
-
-  /* Obtain the two threads. */
   struct thread *thread_a = list_entry (a, struct thread, elem);
   struct thread *thread_b = list_entry (b, struct thread, elem);
-
   return thread_cmp_priority (thread_a, thread_b);
 }
 
@@ -293,8 +273,6 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  // list_insert_ordered(&ready_list, &t->elem, thread_elem_cmp_priority,
-  // &cmp_greater_than);
   list_push_back (&ready_list, &t->elem);
   t->status = THREAD_READY;
   intr_set_level (old_level);
@@ -361,8 +339,7 @@ thread_yield (void)
   ASSERT (!intr_context ());
 
   old_level = intr_disable ();
-  if (cur != idle_thread) //  list_insert_ordered(&ready_list, &cur->elem,
-                          //  thread_elem_cmp_priority, &cmp_greater_than);
+  if (cur != idle_thread) 
     list_push_back (&ready_list, &cur->elem);
   cur->status = THREAD_READY;
   schedule ();
@@ -426,7 +403,7 @@ thread_set_priority (int new_priority)
   enum intr_level old_level;
   struct list_elem *e;
   bool should_yield = false;
-  struct thread *cur;
+  struct thread *cur = thread_current ();
 
   ASSERT (!intr_context ());
 
@@ -434,7 +411,6 @@ thread_set_priority (int new_priority)
     return;
 
   old_level = intr_disable ();
-  cur = thread_current ();
   cur->base_priority = new_priority;
   thread_refresh_priority (cur);
 
@@ -588,9 +564,6 @@ thread_init (struct thread *t, const char *name, int priority)
   t->priority = priority;
   t->base_priority = priority;
   t->donated_priority = PRI_MIN;
-
-  /* I'm not waiting on any lock currently.  Let's set up the apparatus first.
-   */
   t->waiting_on = NULL;
   list_init (&t->held_locks);
 
@@ -634,7 +607,6 @@ next_thread_to_run (void)
       /* Obtain the top priority thread element. */
       struct list_elem *top_priority_thread_elem
           = list_max (&ready_list, thread_elem_cmp_priority, NULL);
-      /* Now, pop said element. */
       list_remove (top_priority_thread_elem);
       return list_entry (top_priority_thread_elem, struct thread, elem);
     }
@@ -721,6 +693,13 @@ allocate_tid (void)
   lock_release (&tid_lock);
 
   return tid;
+}
+
+/* Compares the priorities of two threads. */
+static bool
+thread_cmp_priority (struct thread *thread_a, struct thread *thread_b)
+{
+  return thread_a->priority < thread_b->priority;;
 }
 
 /* Offset of `stack' member within `struct thread'.
