@@ -27,10 +27,10 @@
 */
 
 #include "threads/synch.h"
-#include "threads/interrupt.h"
-#include "threads/thread.h"
 #include <stdio.h>
 #include <string.h>
+#include "threads/interrupt.h"
+#include "threads/thread.h"
 
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
@@ -42,7 +42,7 @@
    - up or "V": increment the value (and wake up one waiting
      thread, if any). */
 void
-sema_init (struct semaphore *sema, unsigned value)
+sema_init (struct semaphore *sema, unsigned value) 
 {
   ASSERT (sema != NULL);
 
@@ -58,7 +58,7 @@ sema_init (struct semaphore *sema, unsigned value)
    interrupts disabled, but if it sleeps then the next scheduled
    thread will probably turn interrupts back on. */
 void
-sema_down (struct semaphore *sema)
+sema_down (struct semaphore *sema) 
 {
   enum intr_level old_level;
 
@@ -66,20 +66,9 @@ sema_down (struct semaphore *sema)
   ASSERT (!intr_context ());
 
   old_level = intr_disable ();
-  while (sema->value == 0)
+  while (sema->value == 0) 
     {
-      /* Insert the thread, with the largest priority, into the queue first;
-      Ensuring that the queue is sorted from biggest priority, down to
-      smallest. */
-
-      struct thread *thread_curr = thread_current ();
-
-      //  printf("I'm pushing current thread %s with priority %d into the wait
-      //  queue\n", &thread_curr->name, thread_curr->priority);
-
       list_push_back (&sema->waiters, &thread_current ()->elem);
-      // list_insert_ordered(&sema->waiters, &thread_current ()->elem,
-      // thread_elem_cmp_priority, &cmp_greater_than);
       thread_block ();
     }
   sema->value--;
@@ -124,42 +113,28 @@ sema_up (struct semaphore *sema)
   ASSERT (sema != NULL);
 
   old_level = intr_disable ();
+  sema->value++;
 
-  bool should_yield = false;
   if (!list_empty (&sema->waiters))
     {
-
-      /* Do some magic, to get the top priority element of the thread! */
-
+      /* Wake waiter in semaphore with highest priority */
       struct list_elem *top_priority_thread_element
           = list_max (&sema->waiters, thread_elem_cmp_priority, NULL);
-
       list_remove (top_priority_thread_element); /* Remove this element. */
-
       struct thread *top_priority_thread
           = list_entry (top_priority_thread_element, struct thread, elem);
-
-      /* Unblock said top priority thread! */
-      // printf("I'm trying to unblock thread %s \n",
-      // top_priority_thread->name);
-
       thread_unblock (top_priority_thread);
-
-      /* Should we yield? */
-      should_yield = thread_get_priority () < top_priority_thread->priority;
+      
+      /* Pre-empts current thread if newly awoken thread has higher priority */
+      if (thread_get_priority () < top_priority_thread->priority)
+        {
+          if (intr_context ())
+            intr_yield_on_return ();
+          else
+            thread_yield ();
+        }
     }
-  sema->value++;
   intr_set_level (old_level);
-
-  /* We've just upped our semaphore;
-  Yield our execution if this thread's priority is higher than ours. */
-  if (should_yield)
-    {
-      if (intr_context ())
-        intr_yield_on_return ();
-      else
-        thread_yield ();
-    }
 }
 
 static void sema_test_helper (void *sema_);
