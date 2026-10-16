@@ -266,19 +266,21 @@ lock_acquire (struct lock *lock)
 bool
 lock_try_acquire (struct lock *lock)
 {
+  struct thread *cur = thread_current ();
+  enum intr_level old_level;
   bool success;
 
   ASSERT (lock != NULL);
   ASSERT (!lock_held_by_current_thread (lock));
 
+  old_level = intr_disable ();
   success = sema_try_down (&lock->semaphore);
   if (success)
     {
-      struct thread *cur = thread_current ();
       lock->holder = cur;
       list_push_back (&cur->held_locks, &lock->elem);
-      /* Store the list of held locks, so I know that I'm holding it. */
     }
+  intr_set_level (old_level);
   return success;
 }
 
@@ -290,22 +292,22 @@ lock_try_acquire (struct lock *lock)
 void
 lock_release (struct lock *lock)
 {
+  enum intr_level old_level;
+
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
 
-  /* Critical Section! Remove this element from the list.*/
-  enum intr_level old_level = intr_disable ();
-
-  /* Remove the current lock from the holding thread's held locks list. */
-  list_remove (&lock->elem);
-
-  /* Refresh my priorities, because my donation is expired. */
-  thread_refresh_priority (thread_current ());
+  old_level = intr_disable ();
 
   lock->holder = NULL;
-  intr_set_level (old_level);
-  /* End of the critical section. */
+  list_remove (&lock->elem);
+  
+  /* Refresh priorities because donations to thread_current for this lock have 
+     expired. */
+  thread_refresh_priority (thread_current ());
+  
   sema_up (&lock->semaphore);
+  intr_set_level (old_level);
 }
 
 /* Returns true if the current thread holds LOCK, false
@@ -408,8 +410,6 @@ cond_wait (struct condition *cond, struct lock *lock)
   sema_init (&waiter.semaphore, 0);
   list_elem_init (&waiter.elem);
   list_push_back (&cond->waiters, &waiter.elem);
-  // list_insert_ordered (&cond->waiters,
-  // &waiter.elem,sema_elem_cmp_priority,&cmp_greater_than);
   lock_release (lock);
   sema_down (&waiter.semaphore);
   lock_acquire (lock);
@@ -432,21 +432,11 @@ cond_signal (struct condition *cond, struct lock *lock UNUSED)
 
   if (!list_empty (&cond->waiters))
     {
-
-      /* Get the top priority waiter. */
-
-      struct list_elem *top_priority_waiter_sema_element
-          = list_max (&cond->waiters, sema_elem_cmp_priority, NULL);
-
-      list_remove (
-          top_priority_waiter_sema_element); /* Remove this element. */
-
-      /* Unwrap the element. */
-
-      struct semaphore_elem *top_priority_waiter_sema = list_entry (
-          top_priority_waiter_sema_element, struct semaphore_elem, elem);
-
-      sema_up (&top_priority_waiter_sema->semaphore);
+      /* Get the waiter with the highest priority. */
+      struct list_elem *highest = list_max (&cond->waiters, 
+                                            sema_elem_cmp_priority, NULL);
+      list_remove (highest);
+      sema_up (&list_entry (highest, struct semaphore_elem, elem)->semaphore);
     }
 }
 
