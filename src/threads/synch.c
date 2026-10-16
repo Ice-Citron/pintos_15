@@ -209,51 +209,52 @@ lock_init (struct lock *lock)
 void
 lock_acquire (struct lock *lock)
 {
+  struct thread *cur = thread_current ();
+  enum intr_level old_level;
+
   ASSERT (lock != NULL);
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
-  struct thread *curr_thread = thread_current ();
+  /* Disable interrupts to ensure nested priority donation and lock acquisition
+     happen atomically */
+  old_level = intr_disable ();
 
-  /* Critical section, disable interrupts!
-  We need this to be able to donate the priorities without pre-emption.
-  */
-  enum intr_level old_level = intr_disable ();
-
-  /* Donate our priorities BEFORE we down the semaphore. */
   if (!thread_mlfqs && lock->holder != NULL)
     {
-      /* Then, we're waiting on the lock's holder. */
-      curr_thread->waiting_on = lock;
-      /* This section handles nested priority donations; donate down the chain.
-       */
-      struct lock *curr_waiting_lock = curr_thread->waiting_on;
+      struct lock *curr_waiting_lock;
+      struct thread *curr_waiting_lock_holder;
+      
+      /* Record the lock current_thread () is waiting on */
+      cur->waiting_on = lock;
+
+      /* Handles nested priority donations; donate down the chain */
+      curr_waiting_lock = cur->waiting_on;
       while (curr_waiting_lock != NULL)
         {
-          /* Who's holding the lock I'm waiting on?*/
-
-          struct thread *curr_waiting_lock_holder = curr_waiting_lock->holder;
-
-          /* Now, update the priority of the current donation thread.*/
-
-          if (curr_waiting_lock_holder->priority < curr_thread->priority)
-            curr_waiting_lock_holder->priority = curr_thread->priority;
-
-          /* Update complete. */
-
+          curr_waiting_lock_holder = curr_waiting_lock->holder;
+          if (curr_waiting_lock_holder->priority < cur->priority)
+            curr_waiting_lock_holder->priority = cur->priority;
           curr_waiting_lock = curr_waiting_lock_holder->waiting_on;
-          /* Now, who's the next guy up the chain? */
         }
     }
 
-  intr_set_level (old_level);
-  /* End of the critical section, re-enable interrupts. */
+  /* Interrupts stay disabled here to ensure atomicity. If thread switch occur 
+     after sema_down, incoming threads will think lock->holder == NULL (instead 
+     of lock->holder = cur;) and fail to donate priority when necessary, causing 
+     priority inversion */
   sema_down (&lock->semaphore);
-  curr_thread->waiting_on
-      = NULL; // I'm not waiting on any lock because I've already got it.
-  lock->holder = curr_thread;
-  list_push_back (&curr_thread->held_locks, &lock->elem);
-  /* Store the list of held locks, so I know that I'm holding it. */
+  lock->holder = cur;
+  
+  /* current_thread () no longer waiting for LOCK. Interrupts stay disabled here
+     to ensure atomicity. If preempted here, the thread would hold the lock 
+     while still claiming to wait on it. This circular dependency would cause
+     future priority donations to be trapped in an infinite loop if any
+     higher-priority future-threads requires LOCK */
+  cur->waiting_on = NULL;
+  list_push_back (&cur->held_locks, &lock->elem);  
+
+  intr_set_level (old_level);
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
@@ -273,9 +274,9 @@ lock_try_acquire (struct lock *lock)
   success = sema_try_down (&lock->semaphore);
   if (success)
     {
-      struct thread *curr_thread = thread_current ();
-      lock->holder = curr_thread;
-      list_push_back (&curr_thread->held_locks, &lock->elem);
+      struct thread *cur = thread_current ();
+      lock->holder = cur;
+      list_push_back (&cur->held_locks, &lock->elem);
       /* Store the list of held locks, so I know that I'm holding it. */
     }
   return success;
