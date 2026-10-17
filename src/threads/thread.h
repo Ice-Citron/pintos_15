@@ -98,8 +98,8 @@ struct thread
   struct list_elem elem; /* List element. */
 
   /* Section for lock priority donation. */
-  struct list held_locks;  /* Container to hold locks that I hold. */
-  struct lock *waiting_on; /* Lock which I am waiting on. */
+  struct list held_locks;    /* List of locks currently held by this thread */
+  struct lock *waiting_on;   /* The lock this thread is currently blocked on */
 
 #ifdef USERPROG
   /* Owned by userprog/process.c. */

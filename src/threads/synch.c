@@ -232,9 +232,10 @@ lock_acquire (struct lock *lock)
       /* Record the lock thread_current () is waiting on */
       cur->waiting_on = lock;
 
-      /* Handles nested priority donations; donate down the chain */
+      /* Handles nested priority donations; donate down the chain. The
+         walk stops at a lock with no holder */
       curr_waiting_lock = cur->waiting_on;
-      while (curr_waiting_lock != NULL)
+      while (curr_waiting_lock != NULL && curr_waiting_lock->holder != NULL)
         {
           curr_waiting_lock_holder = curr_waiting_lock->holder;
           if (curr_waiting_lock_holder->priority < cur->priority)
@@ -244,8 +245,8 @@ lock_acquire (struct lock *lock)
     }
 
   /* Interrupts stay disabled here to ensure atomicity. If thread switch occur 
-     after sema_down, incoming threads will think lock->holder == NULL (instead 
-     of lock->holder = cur;) and fail to donate priority when necessary, causing 
+     after sema_down, incoming threads will think lock->holder == NULL (instead
+     of lock->holder = cur;) and fail to donate priority when necessary, causing
      priority inversion */
   sema_down (&lock->semaphore);
   lock->holder = cur;
