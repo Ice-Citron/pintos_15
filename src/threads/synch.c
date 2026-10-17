@@ -124,7 +124,7 @@ sema_up (struct semaphore *sema)
       /* Wake waiter in semaphore with highest priority */
       struct list_elem *top_priority_thread_element
           = list_max (&sema->waiters, thread_elem_cmp_priority, NULL);
-      list_remove (top_priority_thread_element); /* Remove this element. */
+      list_remove (top_priority_thread_element);
       struct thread *top_priority_thread
           = list_entry (top_priority_thread_element, struct thread, elem);
       thread_unblock (top_priority_thread);
@@ -229,7 +229,7 @@ lock_acquire (struct lock *lock)
       struct lock *curr_waiting_lock;
       struct thread *curr_waiting_lock_holder;
       
-      /* Record the lock current_thread () is waiting on */
+      /* Record the lock thread_current () is waiting on */
       cur->waiting_on = lock;
 
       /* Handles nested priority donations; donate down the chain */
@@ -250,7 +250,7 @@ lock_acquire (struct lock *lock)
   sema_down (&lock->semaphore);
   lock->holder = cur;
   
-  /* current_thread () no longer waiting for LOCK. Interrupts stay disabled here
+  /* thread_current () no longer waiting for LOCK. Interrupts stay disabled here
      to ensure atomicity. If preempted here, the thread would hold the lock 
      while still claiming to wait on it. This circular dependency would cause
      future priority donations to be trapped in an infinite loop if any

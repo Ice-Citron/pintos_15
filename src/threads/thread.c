@@ -67,8 +67,6 @@ static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
-static bool thread_cmp_priority (struct thread *thread_a, 
-                                 struct thread *thread_b);
 #ifdef USERPROG
 static bool is_user_mode (struct thread *);
 #endif
@@ -81,7 +79,7 @@ thread_elem_cmp_priority (const struct list_elem *a, const struct list_elem *b,
 {
   struct thread *thread_a = list_entry (a, struct thread, elem);
   struct thread *thread_b = list_entry (b, struct thread, elem);
-  return thread_cmp_priority (thread_a, thread_b);
+  return thread_a->priority < thread_b->priority;
 }
 
 /* Initializes the threading system by transforming the code
@@ -233,8 +231,7 @@ thread_create (const char *name, int priority, thread_func *function,
   /* Add to run queue. */
   thread_unblock (t);
 
-  /* We've just created a new thread;
-  Yield our execution if this thread's priority is higher than ours. */
+  /* Yield to the new thread if it has higher priority. */
   if (thread_get_priority () < t->priority)
     thread_yield ();
   return tid;
@@ -363,40 +360,43 @@ thread_foreach (thread_action_func *func, void *aux)
     }
 }
 
-/* Recalculates effective priority after its donations change. The caller must
- * have interrupts disabled */
+/* Recalculates the effective priority of thread T after a priority donation
+   is added or removed */
 void
 thread_refresh_priority (struct thread *t)
 {
+  struct list_elem *lock_elem;
+  struct list_elem *waiter_elem;
+  
   ASSERT (t != NULL);
   ASSERT (intr_get_level () == INTR_OFF);
-  if (!thread_mlfqs)
+  
+  /* The 4.4BSD scheduler sets priorities itself, and doesn't donate */
+  if (thread_mlfqs)
+    return;
+
+  ASSERT (t->base_priority >= PRI_MIN && t->base_priority <= PRI_MAX);
+
+  t->priority = t->base_priority;
+  for (lock_elem = list_begin (&t->held_locks);
+       lock_elem != list_end (&t->held_locks); 
+       lock_elem = list_next (lock_elem))
     {
-      ASSERT (t->base_priority >= PRI_MIN && t->base_priority <= PRI_MAX);
-      t->priority = t->base_priority;
-      for (struct list_elem *lock_el = list_begin (&t->held_locks);
-           lock_el != list_end (&t->held_locks); lock_el = list_next (lock_el))
+      struct lock *current_lock = list_entry (lock_elem, struct lock, elem);
+      struct list *curr_waiting_threads = &current_lock->semaphore.waiters;
+      for (waiter_elem = list_begin (curr_waiting_threads);
+           waiter_elem != list_end (curr_waiting_threads);
+           waiter_elem = list_next (waiter_elem))
         {
-          /* Get the current lock that I am holding! */
-          struct lock *current_lock = list_entry (lock_el, struct lock, elem);
-          /* Now, for all of the waiters in this lock, find its priority. */
-          for (struct list_elem *waiter_el
-               = list_begin (&current_lock->semaphore.waiters);
-               waiter_el != list_end (&current_lock->semaphore.waiters);
-               waiter_el = list_next (waiter_el))
-            {
-              struct thread *curr_waiting_thread
-                  = list_entry (waiter_el, struct thread, elem);
-              if (curr_waiting_thread->priority >= t->priority)
-                t->priority = curr_waiting_thread->priority;
-            }
+          struct thread *curr_waiting_thread = list_entry (waiter_elem, 
+                                                           struct thread, elem);
+          if (curr_waiting_thread->priority > t->priority)
+            t->priority = curr_waiting_thread->priority;
         }
-      /* What this does, is  it grabs the top priority among all the waiters of
-       * the lock it holds. */
     }
 }
 
-/* Changes the current threads base priority without losing donations */
+/* Changes the current thread's base priority without losing donations */
 void
 thread_set_priority (int new_priority)
 {
@@ -563,7 +563,6 @@ thread_init (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *)t + PGSIZE;
   t->priority = priority;
   t->base_priority = priority;
-  t->donated_priority = PRI_MIN;
   t->waiting_on = NULL;
   list_init (&t->held_locks);
 
@@ -600,16 +599,14 @@ alloc_frame (struct thread *t, size_t size)
 static struct thread *
 next_thread_to_run (void)
 {
+  struct list_elem *highest;
+
   if (list_empty (&ready_list))
     return idle_thread;
-  else
-    {
-      /* Obtain the top priority thread element. */
-      struct list_elem *top_priority_thread_elem
-          = list_max (&ready_list, thread_elem_cmp_priority, NULL);
-      list_remove (top_priority_thread_elem);
-      return list_entry (top_priority_thread_elem, struct thread, elem);
-    }
+  
+  highest = list_max (&ready_list, thread_elem_cmp_priority, NULL);
+  list_remove (highest);
+  return list_entry (highest, struct thread, elem);
 }
 
 /* Completes a thread switch by activating the new thread's page
@@ -693,13 +690,6 @@ allocate_tid (void)
   lock_release (&tid_lock);
 
   return tid;
-}
-
-/* Compares the priorities of two threads. */
-static bool
-thread_cmp_priority (struct thread *thread_a, struct thread *thread_b)
-{
-  return thread_a->priority < thread_b->priority;;
 }
 
 /* Offset of `stack' member within `struct thread'.

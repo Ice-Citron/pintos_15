@@ -17,7 +17,7 @@ enum thread_status
 /* Thread identifier type.
    You can redefine this to whatever type you like. */
 typedef int tid_t;
-#define TID_ERROR ((tid_t) - 1) /* Error value for tid_t. */
+#define TID_ERROR ((tid_t) -1) /* Error value for tid_t. */
 
 /* Thread priorities. */
 #define PRI_MIN 0      /* Lowest priority. */
@@ -91,9 +91,8 @@ struct thread
   enum thread_status status; /* Thread state. */
   char name[16];             /* Name (for debugging purposes). */
   uint8_t *stack;            /* Saved stack pointer. */
-  int priority;              /* Effective Priority. */
+  int priority;              /* Effective priority. */
   int base_priority;         /* Priority chosen by the thread. */
-  int donated_priority;      /* Highest active donation or PRI_MIN */
   struct list_elem allelem;  /* List element for all threads list. */
   /* Shared between thread.c and synch.c. */
   struct list_elem elem; /* List element. */
