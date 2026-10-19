@@ -9,8 +9,9 @@
 >> Fill in the names and email addresses of your group members.
 
 Shi Hao Ng <shi-hao.ng25@imperial.ac.uk>
-FirstName LastName <email@domain.example>
-FirstName LastName <email@domain.example>
+Shiven Tayal <shiven.tayal25@imperial.ac.uk>
+Suhaan Mobhani <suhaan.mobhani25@imperial.ac.uk>
+Sun Young Li <sun.li@imperial.ac.uk>
 
 ---- PRELIMINARIES ----
 
@@ -69,7 +70,7 @@ FirstName LastName <email@domain.example>
 
 `fixed_t recent_cpu;` in `struct thread` (thread.h)
    To represent the number of CPU-time in timer ticks which each thread
-   has recently used. Only used when BSD scheudler is used.
+   has recently used. Only used when BSD scheduler is used.
 
 `static fixed_t load_avg = 0;` (thread.c)
    To represent the system's current load_avg value, which is updated once
@@ -77,34 +78,36 @@ FirstName LastName <email@domain.example>
    scheduler is used.
 
 `typedef int32_t fixed_t;` (fixed-point.h)
-   The datatype of `float` in PintOS, because PintOS doesn't contain a floating
-   point unit.
+   A 17.14 fixed-point number for `recent_cpu` and `load_avg`, because PintOS
+   does not support floating-point arithmetic. The datatype of `float` in PintOS
+   , because PintOS doesn't contain a floating point unit.
 
 ---- ALGORITHMS ----
 
 >> B2: What steps are taken to minimise the amount of time spent in the timer 
 >> interrupt handler?
 
-`thread_foreach (&update_thread_priority, NULL);` is only ran once every 
+`thread_foreach (&update_thread_priority, NULL);` is only run once every 
 `TIMER_FREQ` ticks because `thread_foreach` applies `&update_thread_priority`
-recalculation across all N running threads. This minimises amount of time 
-spend in timer interrupt handler, as we ensure that we only call 
+recalculation across all N threads in `all_list`. This minimises amount of time 
+spent in timer interrupt handler, as we ensure that we only call 
 `thread_foreach` whenever `load_avg` and `recent_cpu` changes.
 
 On the contrary, in the context of every 4 ticks, we only run a targeted
 `update_thread_priority (t, NULL);` which only recalculates priority for the
-current running thread. This is because `load_avg` and `recent_cpu` aren't
-modified every 4 ticks. Hence, by ensuring that we only recalculate the priority
-for the least amount of threads needed (all threads every TIMER_FREQ, only 
-running thread every PRIORITY_PERIOD), we minimise amount of CPU time spent
-in timer interrupt handler in `thread_tick()`.
+current running thread. This is because between seconds, only the running
+thread's `recent_cpu` changes, so other threads' priorities cannot change.
+Hence, by ensuring that we only recalculate the priority for the least amount of
+ threads needed (all threads every TIMER_FREQ, only running thread every 
+ PRIORITY_PERIOD), we minimise amount of CPU time spent in timer interrupt 
+ handler in `thread_tick()`.
 
-Once every secnd, `calculate_thread_recent_cpu ();` is called once. 
-We minimise the time `calculate_thread_recent_cpu ()` spend in timer interrupt 
-handler by only calculating `load_avg_coeff` once, before passing it into 
-`thread_foreach`, which requires O(1) time complexity. This was more efficient 
-than our previous design which was calculating `load_avg_coeff` again and again 
-within `update_thread_recent_cpu ()` for N threads time, which is a lot more
+Once every second, `calculate_recent_cpu ();` is called once. We minimise the 
+time `calculate_recent_cpu ()` spend in timer interrupt handler by only 
+calculating `load_avg_coeff` once, before passing it into `thread_foreach`, so 
+this calculation is O(1) per second. This was more efficient than our previous 
+design which was calculating `load_avg_coeff` again and again within 
+`update_thread_recent_cpu ()` for N threads time, which is a lot more 
 inefficient at O(N) time complexity.
 
 ---- RATIONALE ----
