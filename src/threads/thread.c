@@ -43,7 +43,7 @@ static struct thread *initial_thread;
 /* Lock used by allocate_tid(). */
 static struct lock tid_lock;
 
-/* System load average, estimates the average number of threads ready to run 
+/* System load average, estimates the average number of threads ready to run
    the past minute */
 static fixed_t load_avg;
 
@@ -82,14 +82,14 @@ void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 static void calculate_recent_cpu_and_priorities (void);
 static void calculate_load_avg (void);
-static void update_thread_recent_cpu_and_priority (struct thread *t, 
-                                                   void *aux UNUSED);
+static void update_thread_recent_cpu_and_priority (struct thread *t,
+                                                   void *aux);
 static void update_thread_priority (struct thread *t, void *aux UNUSED);
 #ifdef USERPROG
 static bool is_user_mode (struct thread *);
 #endif
 
-/* Compares the priorities of two threads. Returns true if thread_a has a lower 
+/* Compares the priorities of two threads. Returns true if thread_a has a lower
    priority than thread_b, false otherwise. */
 bool
 thread_elem_cmp_priority (const struct list_elem *a, const struct list_elem *b,
@@ -174,14 +174,14 @@ thread_tick (void)
   else
     kernel_ticks++;
 
-  if (thread_mlfqs) 
+  if (thread_mlfqs)
     {
       if (t != idle_thread)
         t->recent_cpu = fp_add_int (t->recent_cpu, 1);
-      
-      /* Recalculates each thread's recent_cpu, load_avg and priority every 
+
+      /* Recalculates each thread's recent_cpu, load_avg and priority every
          TIMER_FREQ ticks */
-      if (timer_ticks () % TIMER_FREQ == 0) 
+      if (timer_ticks () % TIMER_FREQ == 0)
         {
           calculate_load_avg ();
           calculate_recent_cpu_and_priorities ();
@@ -373,7 +373,7 @@ thread_yield (void)
   ASSERT (!intr_context ());
 
   old_level = intr_disable ();
-  if (cur != idle_thread) 
+  if (cur != idle_thread)
     list_push_back (&ready_list, &cur->elem);
   cur->status = THREAD_READY;
   schedule ();
@@ -404,10 +404,10 @@ thread_refresh_priority (struct thread *t)
 {
   struct list_elem *lock_elem;
   struct list_elem *waiter_elem;
-  
+
   ASSERT (t != NULL);
   ASSERT (intr_get_level () == INTR_OFF);
-  
+
   /* The 4.4BSD scheduler sets priorities itself, and doesn't donate */
   if (thread_mlfqs)
     return;
@@ -416,7 +416,7 @@ thread_refresh_priority (struct thread *t)
 
   t->priority = t->base_priority;
   for (lock_elem = list_begin (&t->held_locks);
-       lock_elem != list_end (&t->held_locks); 
+       lock_elem != list_end (&t->held_locks);
        lock_elem = list_next (lock_elem))
     {
       struct lock *current_lock = list_entry (lock_elem, struct lock, elem);
@@ -425,7 +425,7 @@ thread_refresh_priority (struct thread *t)
            waiter_elem != list_end (curr_waiting_threads);
            waiter_elem = list_next (waiter_elem))
         {
-          struct thread *curr_waiting_thread = list_entry (waiter_elem, 
+          struct thread *curr_waiting_thread = list_entry (waiter_elem,
                                                            struct thread, elem);
           if (curr_waiting_thread->priority > t->priority)
             t->priority = curr_waiting_thread->priority;
@@ -476,7 +476,7 @@ thread_get_priority (void)
 
 /* Sets the current thread's nice value to NICE. */
 void
-thread_set_nice (int nice) 
+thread_set_nice (int nice)
 {
   enum intr_level old_level;
   struct thread *cur = thread_current ();
@@ -490,7 +490,7 @@ thread_set_nice (int nice)
     }
 
   /* If running thread no longer has the highest priority, yields */
-  for (struct list_elem *elem = list_begin (&ready_list); 
+  for (struct list_elem *elem = list_begin (&ready_list);
        elem != list_end (&ready_list); elem = list_next (elem))
     {
       struct thread *elem_thread = list_entry (elem, struct thread, elem);
@@ -627,7 +627,7 @@ thread_init (struct thread *t, const char *name, int priority)
   t->base_priority = priority;
   t->nice = 0;
   t->recent_cpu = fp_from_int (0);
-  if (thread_mlfqs) 
+  if (thread_mlfqs)
     {
       if (t != initial_thread)
         {
@@ -635,8 +635,8 @@ thread_init (struct thread *t, const char *name, int priority)
           t->nice = parent->nice;
           t->recent_cpu = parent->recent_cpu;
         }
-      
-      /* In BSD mode, ignore PRIORITY function param and calculate priority 
+
+      /* In BSD mode, ignore PRIORITY function param and calculate priority
           instead */
       update_thread_priority (t, NULL);
     }
@@ -679,7 +679,7 @@ next_thread_to_run (void)
 
   if (list_empty (&ready_list))
     return idle_thread;
-  
+
   highest = list_max (&ready_list, thread_elem_cmp_priority, NULL);
   list_remove (highest);
   return list_entry (highest, struct thread, elem);
@@ -768,11 +768,13 @@ allocate_tid (void)
   return tid;
 }
 
-/* Calculate latest `recent_cpu` once per TIMER_FREQ timer ticks. */
+/* Recalculates every thread's recent_cpu and then its priority, once per
+   TIMER_FREQ timer ticks, using a single walk of all_list.  The load_avg
+   coefficient is computed once here rather than once per thread. */
 static void
-calculate_recent_cpu_and_priorities (void) 
+calculate_recent_cpu_and_priorities (void)
 {
-  fixed_t load_avg_coeff = fp_div (fp_mul_int (load_avg, 2), 
+  fixed_t load_avg_coeff = fp_div (fp_mul_int (load_avg, 2),
                                    fp_add_int (fp_mul_int (load_avg, 2), 1));
   thread_foreach (&update_thread_recent_cpu_and_priority, &load_avg_coeff);
 }
@@ -784,18 +786,19 @@ calculate_load_avg (void)
   struct thread *cur = thread_current ();
   fixed_t load_avg_frac = fp_div_int (fp_from_int (59), 60);
   int ready_threads;
-  
+
   ready_threads = list_size (&ready_list);
   if (cur != idle_thread)
     ready_threads++;
-  
+
   /* load_avg = (59/60)*load_avg + (1/60)*ready_threads */
-  load_avg = fp_add (fp_mul (load_avg_frac, load_avg), 
+  load_avg = fp_add (fp_mul (load_avg_frac, load_avg),
                      fp_div_int (fp_from_int (ready_threads), 60));
 }
 
-/* Pass in as function pointer of type `thread_action_func` to calculate 
-   each thread's recent_cpu */
+/* Pass in as function pointer of type `thread_action_func` to calculate
+   each thread's recent_cpu, then its priority from the new value.  AUX
+   points to the load_avg coefficient. */
 static void
 update_thread_recent_cpu_and_priority (struct thread *t, void *aux)
 {
@@ -810,10 +813,10 @@ update_thread_recent_cpu_and_priority (struct thread *t, void *aux)
   update_thread_priority (t, NULL);
 }
 
-/* Pass in as function pointer of type `thread_action_func` for calculating
-   each thread's priority every PRIORITY_PERIOD (4) ticks */
+/* Recalculates T's priority from its recent_cpu and nice value, clamped to
+   the range PRI_MIN to PRI_MAX.  AUX is unused. */
 static void
-update_thread_priority (struct thread *t, void *aux UNUSED) 
+update_thread_priority (struct thread *t, void *aux UNUSED)
 {
   if (t == idle_thread)
     return;
