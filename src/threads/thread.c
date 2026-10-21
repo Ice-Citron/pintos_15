@@ -45,7 +45,7 @@ static struct lock tid_lock;
 
 /* System load average, estimates the average number of threads ready to run 
    the past minute */
-static fixed_t load_avg = 0;
+static fixed_t load_avg;
 
 /* Stack frame for kernel_thread(). */
 struct kernel_thread_frame
@@ -628,7 +628,7 @@ thread_init (struct thread *t, const char *name, int priority)
   t->priority = priority;
   t->base_priority = priority;
   t->nice = 0;
-  t->recent_cpu = 0;
+  t->recent_cpu = fp_from_int(0);
   if (thread_mlfqs) 
     {
       if (t != initial_thread)
