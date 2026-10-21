@@ -18,6 +18,19 @@
 #error TIMER_FREQ <= 1000 recommended
 #endif
 
+/* List of sleeping threads, sorted by expiry_tick in ascending order.  Access
+   this list only with interrupts disabled, because the timer interrupt handler 
+   also accesses it.  */
+static struct list sleep_list;
+
+/* Individual record of each sleeping thread in sleep_list */
+struct sleep_record 
+  {
+    int64_t expiry_tick;    /* Tick at which the thread should wake up */
+    struct list_elem elem;  /* List element in sleep_list */
+    struct semaphore sema;  /* Downed by the sleeper, upped on expiry. */
+  };
+
 /* Number of timer ticks since OS booted. */
 static int64_t ticks;
 
@@ -90,10 +103,11 @@ timer_elapsed (int64_t then)
 }
 
 /* Sleeps for approximately TICKS timer ticks by blocking the current thread. 
-   Interrupts must be turned on during list-handling because sleep_list is 
-   handled by timer interrupt handler */
+   Interrupts must be on when called.  They are briefly disabled while
+   inserting into sleep_list, because the timer interrupt handler also
+   accesses it.  */
 void
-timer_sleep(int64_t ticks) 
+timer_sleep (int64_t ticks) 
 {
   struct sleep_record record;
   enum intr_level old_level;
@@ -106,8 +120,6 @@ timer_sleep(int64_t ticks)
   record.expiry_tick = timer_ticks () + ticks;
   sema_init (&record.sema, 0);
 
-  /* Interrupts must be disabled during list-handling because sleep_list is 
-    handled by timer interrupt handler */
   old_level = intr_disable ();
   list_insert_ordered (&sleep_list, &record.elem, &expiry_tick_less, NULL);
   intr_set_level (old_level);
@@ -194,11 +206,10 @@ timer_interrupt (struct intr_frame *args UNUSED)
   thread_tick ();
 }
 
-/* Wakes every thread in sleep_list whose expiry_ticks <= ticks. Called by 
-   timer_interrupt() on each tick.
-*/
+/* Wakes every thread in sleep_list whose expiry_tick <= ticks. Called by 
+   timer_interrupt() on each tick.  */
 static void 
-check_sleep_list(void)
+check_sleep_list (void)
 {
   struct sleep_record *earliest_record;
 

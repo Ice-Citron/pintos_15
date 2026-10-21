@@ -3,23 +3,9 @@
 
 #include <round.h>
 #include <stdint.h>
-#include "threads/synch.h"
 
 /* Number of timer interrupts per second. */
 #define TIMER_FREQ 100
-
-/* Constains records of sleeping threads sorted by expirty_ticks in ascending
-   order. Only access this list with interrupts off because it's accessed by 
-   timer interrupt handler */
-static struct list sleep_list;
-
-/* Individual record of each sleeping thread in sleep_list */
-struct sleep_record 
-  {
-    int64_t expiry_tick;    /* Tick at which the thread should wake up */
-    struct list_elem elem;  /* List element in sleep_list */
-    struct semaphore sema;  /* Points at semaphore handling sleeping thread */
-  };
 
 void timer_init (void);
 void timer_calibrate (void);
