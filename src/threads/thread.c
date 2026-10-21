@@ -80,9 +80,10 @@ static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
-static void calculate_recent_cpu (void);
+static void calculate_recent_cpu_and_priorities (void);
 static void calculate_load_avg (void);
-static void update_thread_recent_cpu (struct thread *t, void *aux UNUSED);
+static void update_thread_recent_cpu_and_priority (struct thread *t, 
+                                                   void *aux UNUSED);
 static void update_thread_priority (struct thread *t, void *aux UNUSED);
 #ifdef USERPROG
 static bool is_user_mode (struct thread *);
@@ -178,15 +179,12 @@ thread_tick (void)
       if (t != idle_thread)
         t->recent_cpu = fp_add_int (t->recent_cpu, 1);
       
-      /* Recalculates each thread's recent_cpu and load_avg every TIMER_FREQ 
-         ticks*/
+      /* Recalculates each thread's recent_cpu, load_avg and priority every 
+         TIMER_FREQ ticks */
       if (timer_ticks () % TIMER_FREQ == 0) 
         {
           calculate_load_avg ();
-          calculate_recent_cpu ();
-          /* Recalculates all thread in all_list's priority as load_avg and 
-             recent_cpu has just been updated */
-          thread_foreach (&update_thread_priority, NULL);
+          calculate_recent_cpu_and_priorities ();
         }
       else if (timer_ticks () % PRIORITY_PERIOD == 0)
         {
@@ -628,7 +626,7 @@ thread_init (struct thread *t, const char *name, int priority)
   t->priority = priority;
   t->base_priority = priority;
   t->nice = 0;
-  t->recent_cpu = fp_from_int(0);
+  t->recent_cpu = fp_from_int (0);
   if (thread_mlfqs) 
     {
       if (t != initial_thread)
@@ -772,11 +770,11 @@ allocate_tid (void)
 
 /* Calculate latest `recent_cpu` once per TIMER_FREQ timer ticks. */
 static void
-calculate_recent_cpu (void) 
+calculate_recent_cpu_and_priorities (void) 
 {
   fixed_t load_avg_coeff = fp_div (fp_mul_int (load_avg, 2), 
                                    fp_add_int (fp_mul_int (load_avg, 2), 1));
-  thread_foreach (&update_thread_recent_cpu, &load_avg_coeff);
+  thread_foreach (&update_thread_recent_cpu_and_priority, &load_avg_coeff);
 }
 
 /* Calculate latest `load_avg` once per TIMER_FREQ timer ticks. */
@@ -799,7 +797,7 @@ calculate_load_avg (void)
 /* Pass in as function pointer of type `thread_action_func` to calculate 
    each thread's recent_cpu */
 static void
-update_thread_recent_cpu (struct thread *t, void *aux)
+update_thread_recent_cpu_and_priority (struct thread *t, void *aux)
 {
   fixed_t load_avg_coeff = *(fixed_t *) aux;
 
@@ -808,6 +806,8 @@ update_thread_recent_cpu (struct thread *t, void *aux)
 
   /* recent_cpu = (2*load_avg) / (2*load_avg + 1) * recent_cpu + nice */
   t->recent_cpu = fp_add_int (fp_mul (load_avg_coeff, t->recent_cpu), t->nice);
+
+  update_thread_priority (t, NULL);
 }
 
 /* Pass in as function pointer of type `thread_action_func` for calculating
