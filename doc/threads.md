@@ -31,6 +31,8 @@ Sun Young Li <sun.li@imperial.ac.uk>
 >> member, global or static variable, `typedef', or enumeration.
 >> Identify the purpose of each in roughly 25 words.
 
+Sun Young:
+
 ```c
 /* Lock. */
 struct lock 
@@ -80,6 +82,19 @@ struct thread
 The `thread` struct was modified to track a "base priority" distinct from its 
 effective/donated priorities, and to track locks it is holding (to receive donations),
 and the lock it is waiting on (to give donations).
+
+Suhaan:
+
+`int priority;` in `struct thread` (`src/threads/thread.h`)
+The effective priority used by the scheduler and returned by
+`thread_get_priority()`. It can be raised above the threads own priority
+while a higher priority thread waits for one of its locks.
+
+`int base_priority;` in `struct thread` (`src/threads/thread.h`)
+The thread's original priority set during `thread_init()` and updated by
+`thread_set_priority()`. We keep it separate so donations can temporarily
+raise the effective priority without losing the value the thread chose.
+
 
 ---- ALGORITHMS ----
 
@@ -348,6 +363,8 @@ Finally, interrupts are re-enabled.
 >> potentially change during the computation?
 >> Can you use a lock to avoid the race?
 
+Sun Young:
+
 A race condition is avoided in `thread_set_priority` when a thread needs to recompute its 
 effective priority by disabling interrupts throughout. 
 
@@ -366,11 +383,27 @@ pushed into `held_locks` too, until infinity.
 
 Disabling interrupts avoids this problem; as it does not mutate `held_locks`, and ensures no other threads can mutate `held_locks`.
 
+Suhaan:
+
+`thread_set_priority()` disables interrupts before changing `base_priority`.
+It then calls `thread_refresh_priority()` which starts from that base value
+and checks the effective priorities of waiters on every lock the thread
+holds. The helper requires interrupts to be off, so, another thread cannot
+change those waiter lists half way through the calculation. The setter also
+checks `ready_list` before restoring the previous interrupt level, yielding
+if a ready thread now has a higher priority.
+
+We wouldn't use a lock for this: acquiring one could block and locks are
+themselves involved in priority donation. Disabling interrupts avoids the
+circular dependency and protects the calculation without introducing another
+lock into the scheduler.
 
 ---- RATIONALE ----
 
 >> A6: Why did you choose this design?
 >> In what ways is it superior to another design you considered?
+
+Sun Young: 
 
 This design was chosen, as it was much more simple than other designs that were considered.
 Initially, the use of an ordered list was considered for the waiter's lists and ready lists, however, this soon 
@@ -381,6 +414,23 @@ existing code, and make current code easier to understand.
 And in addition, we considered overlooking implementation of MPW caching. However, this would transform a single-loop into a 
 two-layer nested loop, which would prove to be rather inefficient when executed thousands of times by the scheduler, and when 
 a large number of threads are queueing to access a certain lock.
+
+Suhaan:
+
+We kept `priority` as the effective value read by the scheduler and getter,
+with `base_priority` remembering the threads own setting. When that setting
+changes, we recalculate the effective value from threads currently
+waiting on locks the thread holds. Unlike a cached maximum donation, this
+also takes account of donations disappearing when a lock is released without
+having to maintain a separate list of donation records.
+
+The setter checks the entire ready list instead of just its front: the list
+is not kept sorted (`thread_unblock()` appends to it) and the scheduler also
+searches it for the highest priority. This is simpler to keep consistent,
+but the cost is a linear scan of ready threads on top of examining held locks
+and their waiters, while interrupts are disabled. For our getter and setter work
+we preferred that tradeoff to extra cached donation state or keeping every
+queue sorted after priority changes.
 
               ADVANCED SCHEDULER
               ============
