@@ -48,7 +48,7 @@ static struct lock tid_lock;
 static fixed_t load_avg;
 
 
-/* Threads charged a timer tick since the last fourth tick.  Only these can
+/* Threads charged a timer tick since the last fourth tick. Only these can
    have a priority that no longer matches the BSD formula, and there are at
    most PRIORITY_PERIOD of them. */
 static struct thread *charged_threads[PRIORITY_PERIOD];
