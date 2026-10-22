@@ -262,6 +262,12 @@ lock_acquire (struct lock *lock)
           curr_waiting_lock_holder = curr_waiting_lock->holder;
           if (curr_waiting_lock_holder->priority < cur->priority)
             curr_waiting_lock_holder->priority = cur->priority;
+
+          /* Update the max waiter priority of current lock in chain,
+          which may have changed due to donation */
+          if (curr_waiting_lock->max_waiter_priority < cur->priority)
+            curr_waiting_lock->max_waiter_priority = cur->priority;
+
           curr_waiting_lock = curr_waiting_lock_holder->waiting_on;
         }
     }
