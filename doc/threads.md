@@ -222,40 +222,62 @@ waiting thread with the highest priority in the whole condition variable's waiti
 >> priority donation. How is nested donation handled?
 
 ```c
-  /* Disable interrupts to ensure nested priority donation and lock acquisition
+/* Disable interrupts to ensure nested priority donation and lock acquisition
      happen atomically */
   old_level = intr_disable ();
 
-  if (!thread_mlfqs && lock->holder != NULL)
-    {
-      struct lock *curr_waiting_lock;
-      struct thread *curr_waiting_lock_holder;
-      
-      /* Record the lock thread_current () is waiting on */
-      cur->waiting_on = lock;
+  /* Avoids the barging problem;
+  The barging problem is when the lock is finally released; but in the gap between it 
+  being released the lock being acquired, another lock could acquire the lock.
+  
+  The purpose of the code below is: attempt to acquire the semaphore, if unsuccessful then  
+  donate priorities, wait for it, and block the thread until the semaphore is successfully acquired.
+  */
+  while (!sema_try_down (&lock->semaphore)) 
+  {
+    /* sema_try_down(&lock->semaphore) returned false, implying lock->holder != NULL.
+    For debugging, assert that the lock->holder != NULL. */
+    ASSERT(lock->holder != NULL);
+    if (!thread_mlfqs)
+      {
+        struct lock *curr_waiting_lock;
+        struct thread *curr_waiting_lock_holder;
+        
+        /* Record the lock thread_current () is waiting on */
+        cur->waiting_on = lock;
 
-      /* Handles nested priority donations; donate down the chain. The
-         walk stops at a lock with no holder */
-      curr_waiting_lock = cur->waiting_on;
-      while (curr_waiting_lock != NULL && curr_waiting_lock->holder != NULL)
-        {
-          curr_waiting_lock_holder = curr_waiting_lock->holder;
-          if (curr_waiting_lock_holder->priority < cur->priority)
-            curr_waiting_lock_holder->priority = cur->priority;
+        /* Handles nested priority donations; donate down the chain. The
+          walk stops at a lock with no holder */
+        curr_waiting_lock = cur->waiting_on;
+        while (curr_waiting_lock != NULL && curr_waiting_lock->holder != NULL)
+          {
+            curr_waiting_lock_holder = curr_waiting_lock->holder;
+            if (curr_waiting_lock_holder->priority < cur->priority)
+              curr_waiting_lock_holder->priority = cur->priority;
 
-          /* Update the max waiter priority of current lock in chain,
-          which may have changed due to donation */
-          if (curr_waiting_lock->max_waiter_priority < cur->priority)
-            curr_waiting_lock->max_waiter_priority = cur->priority;
+            /* Update the max waiter priority of current lock in chain,
+            which may have changed due to donation */
+            if (curr_waiting_lock->max_waiter_priority < cur->priority)
+              curr_waiting_lock->max_waiter_priority = cur->priority;
 
-          curr_waiting_lock = curr_waiting_lock_holder->waiting_on;
-        }
-    }
+            curr_waiting_lock = curr_waiting_lock_holder->waiting_on;
+          }
+      }
+      list_push_back(&lock->semaphore.waiters,&cur->elem);
+      thread_block();
+  }
+  
 ```
 
 Firstly, interrupts are disabled with `intr_disable` to ensure nested priority donation and lock acquisition
 happen atomically; this is because if interrupts were NOT disabled, another thread could pre-empt
 the current thread and release/acquire a lock, breaking the whole chain of priority donations.
+
+The barging problem is when the lock is finally released; but in the gap between it being released 
+the lock being acquired, another lock could acquire the lock.
+To avoid the barging problem, the semaphore is attempted to be acquired. If it is acquired, the code continues, 
+otherwise, if the semaphore is not acquired, the donation process begins.
+
 Then, the lock that the current thread is waiting on is recorded as `curr_waiting_lock`; through which its
 holder is identified to be able to perform priority donations to said holder.
 
@@ -273,6 +295,9 @@ so  the max waiting priority is NOT updated)
 Finally, `curr_waiting_lock` is rereferenced to the lock that its holder is waiting on, to support nested
 donations, and move down the chain. This process repeats for every lock and thread down the chain, so that
 every thread receives the correct donation, and every lock stores the correct maximum waiting priority.
+
+The thread is then blocked, to allow other threads to execute while it waits for the semaphore's release.
+Once it does, it immediately tries to acquire the semaphore again, repeating until the semaphore is acquired.
 
 
 >> A4: Describe the sequence of events when lock_release() is called on a lock

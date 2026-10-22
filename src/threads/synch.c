@@ -246,37 +246,47 @@ lock_acquire (struct lock *lock)
      happen atomically */
   old_level = intr_disable ();
 
-  if (!thread_mlfqs && lock->holder != NULL)
-    {
-      struct lock *curr_waiting_lock;
-      struct thread *curr_waiting_lock_holder;
-      
-      /* Record the lock thread_current () is waiting on */
-      cur->waiting_on = lock;
+  /* Avoids the barging problem;
+  The barging problem is when the lock is finally released; but in the gap between it 
+  being released the lock being acquired, another lock could acquire the lock.
+  
+  The purpose of the code below is: attempt to acquire the semaphore, if unsuccessful then  
+  donate priorities, wait for it, and block the thread until the semaphore is successfully acquired.
+  */
+  while (!sema_try_down (&lock->semaphore)) 
+  {
+    /* sema_try_down(&lock->semaphore) returned false, implying lock->holder != NULL.
+    For debugging, assert that the lock->holder != NULL. */
+    ASSERT(lock->holder != NULL);
+    if (!thread_mlfqs)
+      {
+        struct lock *curr_waiting_lock;
+        struct thread *curr_waiting_lock_holder;
+        
+        /* Record the lock thread_current () is waiting on */
+        cur->waiting_on = lock;
 
-      /* Handles nested priority donations; donate down the chain. The
-         walk stops at a lock with no holder */
-      curr_waiting_lock = cur->waiting_on;
-      while (curr_waiting_lock != NULL && curr_waiting_lock->holder != NULL)
-        {
-          curr_waiting_lock_holder = curr_waiting_lock->holder;
-          if (curr_waiting_lock_holder->priority < cur->priority)
-            curr_waiting_lock_holder->priority = cur->priority;
+        /* Handles nested priority donations; donate down the chain. The
+          walk stops at a lock with no holder */
+        curr_waiting_lock = cur->waiting_on;
+        while (curr_waiting_lock != NULL && curr_waiting_lock->holder != NULL)
+          {
+            curr_waiting_lock_holder = curr_waiting_lock->holder;
+            if (curr_waiting_lock_holder->priority < cur->priority)
+              curr_waiting_lock_holder->priority = cur->priority;
 
-          /* Update the max waiter priority of current lock in chain,
-          which may have changed due to donation */
-          if (curr_waiting_lock->max_waiter_priority < cur->priority)
-            curr_waiting_lock->max_waiter_priority = cur->priority;
+            /* Update the max waiter priority of current lock in chain,
+            which may have changed due to donation */
+            if (curr_waiting_lock->max_waiter_priority < cur->priority)
+              curr_waiting_lock->max_waiter_priority = cur->priority;
 
-          curr_waiting_lock = curr_waiting_lock_holder->waiting_on;
-        }
-    }
-
-  /* Interrupts stay disabled here to ensure atomicity. If thread switch occur 
-     after sema_down, incoming threads will think lock->holder == NULL (instead
-     of lock->holder = cur;) and fail to donate priority when necessary, causing
-     priority inversion */
-  sema_down (&lock->semaphore);
+            curr_waiting_lock = curr_waiting_lock_holder->waiting_on;
+          }
+      }
+      list_push_back(&lock->semaphore.waiters,&cur->elem);
+      thread_block();
+  }
+  
 
   /* This thread no longer waits for its lock due to successful acquisition, 
   refresh max waiters */
