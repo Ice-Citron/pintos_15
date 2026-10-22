@@ -403,7 +403,6 @@ void
 thread_refresh_priority (struct thread *t)
 {
   struct list_elem *lock_elem;
-  struct list_elem *waiter_elem;
 
   ASSERT (t != NULL);
   ASSERT (intr_get_level () == INTR_OFF);
@@ -420,7 +419,6 @@ thread_refresh_priority (struct thread *t)
        lock_elem = list_next (lock_elem))
     {
       struct lock *current_lock = list_entry (lock_elem, struct lock, elem);
-      struct list *curr_waiting_threads = &current_lock->semaphore.waiters;
 
       if (t->priority < current_lock->max_waiter_priority) 
         t->priority = current_lock->max_waiter_priority;
