@@ -205,6 +205,25 @@ lock_init (struct lock *lock)
   sema_init (&lock->semaphore, 1);
 }
 
+/*
+Refresh the maximum priority of the waiters in a lock.
+*/
+void 
+lock_refresh_max_wait_priority(struct lock* lock) {
+  
+  /* The maximum waiter priority should default to PRI_MIN,
+  only changing based on current waiters (if any) */
+  lock->max_waiter_priority = PRI_MIN;
+
+  for (struct list_elem* waiter_elem = list_begin(&lock->semaphore.waiters);
+      waiter_elem != list_end(&lock->semaphore.waiters);
+      waiter_elem = list_next(waiter_elem)) {
+        struct thread* waiter = list_entry(waiter_elem, struct thread, elem);
+        if (lock->max_waiter_priority < waiter->priority)
+          lock->max_waiter_priority = waiter->priority;
+      }
+}
+
 /* Acquires LOCK, sleeping until it becomes available if
    necessary.  The lock must not already be held by the current
    thread.
@@ -252,6 +271,11 @@ lock_acquire (struct lock *lock)
      of lock->holder = cur;) and fail to donate priority when necessary, causing
      priority inversion */
   sema_down (&lock->semaphore);
+
+  /* This thread no longer waits for its lock due to successful acquisition, 
+  refresh max waiters */
+  lock_refresh_max_wait_priority(lock);
+
   lock->holder = cur;
   
   /* thread_current () no longer waiting for LOCK. Interrupts stay disabled here
@@ -286,6 +310,8 @@ lock_try_acquire (struct lock *lock)
   if (success)
     {
       lock->holder = cur;
+      /* This thread is no longer a waiter due to successful acquisition, must refresh max waiters */
+      lock_refresh_max_wait_priority(lock);
       list_push_back (&cur->held_locks, &lock->elem);
     }
   intr_set_level (old_level);
