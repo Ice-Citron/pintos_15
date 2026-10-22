@@ -1,10 +1,6 @@
 #include "threads/thread.h"
-#include <debug.h>
-#include <random.h>
-#include <stddef.h>
-#include <stdio.h>
-#include <string.h>
 #include "devices/timer.h"
+#include "threads/fixed-point.h"
 #include "threads/flags.h"
 #include "threads/interrupt.h"
 #include "threads/intr-stubs.h"
@@ -12,7 +8,11 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
-#include "threads/fixed-point.h"
+#include <debug.h>
+#include <random.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <string.h>
 
 /* Random value for struct thread's `magic' member.
    Used to detect stack overflow.  See the big comment at the top
@@ -420,7 +420,7 @@ thread_refresh_priority (struct thread *t)
     {
       struct lock *current_lock = list_entry (lock_elem, struct lock, elem);
 
-      if (t->priority < current_lock->max_waiter_priority) 
+      if (t->priority < current_lock->max_waiter_priority)
         t->priority = current_lock->max_waiter_priority;
     }
 }

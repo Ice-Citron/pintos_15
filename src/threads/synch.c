@@ -27,13 +27,13 @@
 */
 
 #include "threads/synch.h"
-#include <stdio.h>
-#include <string.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include <stdio.h>
+#include <string.h>
 
-static bool sema_elem_cmp_priority (const struct list_elem *a, 
-                                    const struct list_elem *b, 
+static bool sema_elem_cmp_priority (const struct list_elem *a,
+                                    const struct list_elem *b,
                                     void *aux UNUSED);
 
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
@@ -46,7 +46,7 @@ static bool sema_elem_cmp_priority (const struct list_elem *a,
    - up or "V": increment the value (and wake up one waiting
      thread, if any). */
 void
-sema_init (struct semaphore *sema, unsigned value) 
+sema_init (struct semaphore *sema, unsigned value)
 {
   ASSERT (sema != NULL);
 
@@ -62,7 +62,7 @@ sema_init (struct semaphore *sema, unsigned value)
    interrupts disabled, but if it sleeps then the next scheduled
    thread will probably turn interrupts back on. */
 void
-sema_down (struct semaphore *sema) 
+sema_down (struct semaphore *sema)
 {
   enum intr_level old_level;
 
@@ -70,7 +70,7 @@ sema_down (struct semaphore *sema)
   ASSERT (!intr_context ());
 
   old_level = intr_disable ();
-  while (sema->value == 0) 
+  while (sema->value == 0)
     {
       list_push_back (&sema->waiters, &thread_current ()->elem);
       thread_block ();
@@ -128,7 +128,7 @@ sema_up (struct semaphore *sema)
       struct thread *top_priority_thread
           = list_entry (top_priority_thread_element, struct thread, elem);
       thread_unblock (top_priority_thread);
-      
+
       /* Pre-empts current thread if newly awoken thread has higher priority */
       if (thread_get_priority () < top_priority_thread->priority)
         {
@@ -208,20 +208,22 @@ lock_init (struct lock *lock)
 /*
 Refresh the maximum priority of the waiters in a lock.
 */
-void 
-lock_refresh_max_wait_priority(struct lock* lock) {
-  
+void
+lock_refresh_max_wait_priority (struct lock *lock)
+{
+
   /* The maximum waiter priority should default to PRI_MIN,
   only changing based on current waiters (if any) */
   lock->max_waiter_priority = PRI_MIN;
 
-  for (struct list_elem* waiter_elem = list_begin(&lock->semaphore.waiters);
-      waiter_elem != list_end(&lock->semaphore.waiters);
-      waiter_elem = list_next(waiter_elem)) {
-        struct thread* waiter = list_entry(waiter_elem, struct thread, elem);
-        if (lock->max_waiter_priority < waiter->priority)
-          lock->max_waiter_priority = waiter->priority;
-      }
+  for (struct list_elem *waiter_elem = list_begin (&lock->semaphore.waiters);
+       waiter_elem != list_end (&lock->semaphore.waiters);
+       waiter_elem = list_next (waiter_elem))
+    {
+      struct thread *waiter = list_entry (waiter_elem, struct thread, elem);
+      if (lock->max_waiter_priority < waiter->priority)
+        lock->max_waiter_priority = waiter->priority;
+    }
 }
 
 /* Acquires LOCK, sleeping until it becomes available if
@@ -247,60 +249,62 @@ lock_acquire (struct lock *lock)
   old_level = intr_disable ();
 
   /* Avoids the barging problem;
-  The barging problem is when the lock is finally released; but in the gap between it 
-  being released the lock being acquired, another lock could acquire the lock.
-  
-  The purpose of the code below is: attempt to acquire the semaphore, if unsuccessful then  
-  donate priorities, wait for it, and block the thread until the semaphore is successfully acquired.
+  The barging problem is when the lock is finally released; but in the gap
+  between it being released the lock being acquired, another lock could acquire
+  the lock.
+
+  The purpose of the code below is: attempt to acquire the semaphore, if
+  unsuccessful then donate priorities, wait for it, and block the thread until
+  the semaphore is successfully acquired.
   */
-  while (!sema_try_down (&lock->semaphore)) 
-  {
-    /* sema_try_down(&lock->semaphore) returned false, implying lock->holder != NULL.
-    For debugging, assert that the lock->holder != NULL. */
-    ASSERT(lock->holder != NULL);
-    if (!thread_mlfqs)
-      {
-        struct lock *curr_waiting_lock;
-        struct thread *curr_waiting_lock_holder;
-        
-        /* Record the lock thread_current () is waiting on */
-        cur->waiting_on = lock;
+  while (!sema_try_down (&lock->semaphore))
+    {
+      /* sema_try_down(&lock->semaphore) returned false, implying lock->holder
+      != NULL. For debugging, assert that the lock->holder != NULL. */
+      ASSERT (lock->holder != NULL);
+      if (!thread_mlfqs)
+        {
+          struct lock *curr_waiting_lock;
+          struct thread *curr_waiting_lock_holder;
 
-        /* Handles nested priority donations; donate down the chain. The
-          walk stops at a lock with no holder */
-        curr_waiting_lock = cur->waiting_on;
-        while (curr_waiting_lock != NULL && curr_waiting_lock->holder != NULL)
-          {
-            curr_waiting_lock_holder = curr_waiting_lock->holder;
-            if (curr_waiting_lock_holder->priority < cur->priority)
-              curr_waiting_lock_holder->priority = cur->priority;
+          /* Record the lock thread_current () is waiting on */
+          cur->waiting_on = lock;
 
-            /* Update the max waiter priority of current lock in chain,
-            which may have changed due to donation */
-            if (curr_waiting_lock->max_waiter_priority < cur->priority)
-              curr_waiting_lock->max_waiter_priority = cur->priority;
+          /* Handles nested priority donations; donate down the chain. The
+            walk stops at a lock with no holder */
+          curr_waiting_lock = cur->waiting_on;
+          while (curr_waiting_lock != NULL
+                 && curr_waiting_lock->holder != NULL)
+            {
+              curr_waiting_lock_holder = curr_waiting_lock->holder;
+              if (curr_waiting_lock_holder->priority < cur->priority)
+                curr_waiting_lock_holder->priority = cur->priority;
 
-            curr_waiting_lock = curr_waiting_lock_holder->waiting_on;
-          }
-      }
-      list_push_back(&lock->semaphore.waiters,&cur->elem);
-      thread_block();
-  }
-  
+              /* Update the max waiter priority of current lock in chain,
+              which may have changed due to donation */
+              if (curr_waiting_lock->max_waiter_priority < cur->priority)
+                curr_waiting_lock->max_waiter_priority = cur->priority;
 
-  /* This thread no longer waits for its lock due to successful acquisition, 
+              curr_waiting_lock = curr_waiting_lock_holder->waiting_on;
+            }
+        }
+      list_push_back (&lock->semaphore.waiters, &cur->elem);
+      thread_block ();
+    }
+
+  /* This thread no longer waits for its lock due to successful acquisition,
   refresh max waiters */
-  lock_refresh_max_wait_priority(lock);
+  lock_refresh_max_wait_priority (lock);
 
   lock->holder = cur;
-  
-  /* thread_current () no longer waiting for LOCK. Interrupts stay disabled here
-     to ensure atomicity. If preempted here, the thread would hold the lock 
-     while still claiming to wait on it. This circular dependency would cause
-     future priority donations to be trapped in an infinite loop if any
+
+  /* thread_current () no longer waiting for LOCK. Interrupts stay disabled
+     here to ensure atomicity. If preempted here, the thread would hold the
+     lock while still claiming to wait on it. This circular dependency would
+     cause future priority donations to be trapped in an infinite loop if any
      higher-priority future-threads requires LOCK */
   cur->waiting_on = NULL;
-  list_push_back (&cur->held_locks, &lock->elem);  
+  list_push_back (&cur->held_locks, &lock->elem);
 
   intr_set_level (old_level);
 }
@@ -326,8 +330,9 @@ lock_try_acquire (struct lock *lock)
   if (success)
     {
       lock->holder = cur;
-      /* This thread is no longer a waiter due to successful acquisition, must refresh max waiters */
-      lock_refresh_max_wait_priority(lock);
+      /* This thread is no longer a waiter due to successful acquisition, must
+       * refresh max waiters */
+      lock_refresh_max_wait_priority (lock);
       list_push_back (&cur->held_locks, &lock->elem);
     }
   intr_set_level (old_level);
@@ -351,11 +356,11 @@ lock_release (struct lock *lock)
 
   lock->holder = NULL;
   list_remove (&lock->elem);
-  
-  /* Refresh priorities because donations to thread_current for this lock have 
+
+  /* Refresh priorities because donations to thread_current for this lock have
      expired. */
   thread_refresh_priority (thread_current ());
-  
+
   sema_up (&lock->semaphore);
   intr_set_level (old_level);
 }
@@ -468,9 +473,9 @@ cond_broadcast (struct condition *cond, struct lock *lock)
     cond_signal (cond, lock);
 }
 
-/* Returns true if the thread with highest priority that waits on semaphore_elem 
-   A has a lower priority than the thread with highest priority that waits on 
-   semaphore_elem B. 
+/* Returns true if the thread with highest priority that waits on
+   semaphore_elem A has a lower priority than the thread with highest priority
+   that waits on semaphore_elem B.
 */
 static bool
 sema_elem_cmp_priority (const struct list_elem *a, const struct list_elem *b,

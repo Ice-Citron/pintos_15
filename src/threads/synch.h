@@ -24,14 +24,15 @@ struct lock
     struct semaphore semaphore; /* Binary semaphore controlling access. */
     struct list_elem elem;      /* Element holding the lock in a holder's held 
                                    locks list.  */
-    int max_waiter_priority;    /* Cached priority of the waiter with maximum priority. */
+    int max_waiter_priority;    /* Cached priority of the waiter with maximum
+                                  priority. */
   };
 
 void lock_init (struct lock *);
 void lock_acquire (struct lock *);
 bool lock_try_acquire (struct lock *);
 void lock_release (struct lock *);
-void lock_refresh_max_wait_priority(struct lock *);
+void lock_refresh_max_wait_priority (struct lock *);
 bool lock_held_by_current_thread (const struct lock *);
 
 /* Condition variable. */
