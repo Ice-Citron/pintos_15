@@ -47,6 +47,13 @@ static struct lock tid_lock;
    the past minute */
 static fixed_t load_avg;
 
+
+/* Threads charged a timer tick since the last fourth tick.  Only these can
+   have a priority that no longer matches the BSD formula, and there are at
+   most PRIORITY_PERIOD of them. */
+static struct thread *charged_threads[PRIORITY_PERIOD];
+static int charged_cnt;
+
 /* Stack frame for kernel_thread(). */
 struct kernel_thread_frame
 {
@@ -177,7 +184,14 @@ thread_tick (void)
   if (thread_mlfqs)
     {
       if (t != idle_thread)
-        t->recent_cpu = fp_add_int (t->recent_cpu, 1);
+        {
+          t->recent_cpu = fp_add_int (t->recent_cpu, 1);
+          if (charged_cnt == 0 || charged_threads[charged_cnt - 1] != t)
+            {
+              ASSERT (charged_cnt < PRIORITY_PERIOD);
+              charged_threads[charged_cnt++] = t;
+            }
+        }
 
       /* Recalculates each thread's recent_cpu, load_avg and priority every
          TIMER_FREQ ticks */
@@ -185,11 +199,13 @@ thread_tick (void)
         {
           calculate_load_avg ();
           calculate_recent_cpu_and_priorities ();
+          charged_cnt = 0;
         }
       else if (timer_ticks () % PRIORITY_PERIOD == 0)
         {
           /* Recalculates only the running thread's priority every 4 ticks */
           update_thread_priority (t, NULL);
+          charged_cnt = 0;
         }
     }
 
