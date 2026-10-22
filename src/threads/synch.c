@@ -199,6 +199,9 @@ lock_init (struct lock *lock)
   ASSERT (lock != NULL);
 
   lock->holder = NULL;
+  /* Initialise the maximum waiter priority,
+  which is PRI_MIN as upon initialisation there are none */
+  lock->max_waiter_priority = PRI_MIN;
   sema_init (&lock->semaphore, 1);
 }
 
