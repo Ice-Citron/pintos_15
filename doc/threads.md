@@ -455,6 +455,16 @@ queue sorted after priority changes.
    per TIMER_FREQ timer ticks for the BSD scheduler. Only used when the BSD
    scheduler is used.
 
+`static struct thread *charged_threads[PRIORITY_PERIOD]` (thread.c)
+   To store the threads charged a timer tick since the last fourth tick. Only
+   these threads can have a priority which no longer matches the BSD formula,
+   for which these threads (at most PRIORITY_PERIOD (4) entries) are 
+   recalculated every PRIORITY_PERIOD's ticks in `thread_tick`.
+
+`static int charged_cnt;` (thread.c)
+   To represent the number of entries in `charged_threads`. Resets to 0 after
+   every PRIORITY_PERIOD's recalculation in `thread_tick (void)`.
+
 `typedef struct { int32_t raw; } fixed_t;` (fixed-point.h)
    A signed 17.14 fixed-point number used for `recent_cpu` and `load_avg`,
    since the PintOS kernel has no floating-point support. Wrapping the raw
@@ -474,8 +484,15 @@ values depend only on its own fields and the global `load_avg`, and it avoids
 the second walk of `all_list` that separate recent_cpu and priority passes
 would need.
 
-On the contrary, in the context of every 4 ticks, we only run a targeted
-`update_thread_priority (t, NULL);` which only recalculates priority for the
+On the contrary, in the context of every `PRIORITY_PERIOD` (4) ticks, we only 
+recalculate the priority of the threads in `charged_threads` in 
+`thread_tick ()`. Because `charged_threads` only holds every thread whose 
+`priority` no longer match the BSD formula since the last `PRIORITY_PERIOD` (4) 
+ticks. We minimise the amount of time spent in timer interrupt handler, by
+ensuring that we only recalculate the priority for the least amount of threads 
+needed every 4 ticks (when `timer_ticks () % PRIORITY_PERIOD == 0`). 
+
+run a targeted `update_thread_priority (t, NULL);` which only recalculates priority for the
 current running thread. This is because between seconds, only the running
 thread's `recent_cpu` changes, so other threads' priorities cannot change.
 Hence, by ensuring that we only recalculate the priority for the least amount of
@@ -499,8 +516,9 @@ which is a lot more inefficient at O(N) time complexity.
 ADVANTAGE:
 - The time spent in timer interrupt handler within `thread_tick` for
   incrementing current thread's `recent_cpu` every tick takes O(1) time, and
-  updating the current thread's priority every `PRIORITY_PERIOD` (4 ticks) also
-  takes O(1) time.
+  updating the priorities of the at most 4 (`PRIORITY_PERIOD`) threads in 
+  `charged_threads` every `PRIORITY_PERIOD` (4 ticks) also only takes O(1) time.
+  
 DISADVANTAGE:
 - In `thread.c`'s `thread_set_nice`, it disables interrupts as it walks across
   `ready_list`, this walk takes O(n) time where the interrupts are disabled.
