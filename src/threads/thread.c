@@ -193,8 +193,9 @@ thread_tick (void)
             }
         }
 
-      /* Recalculates each thread's recent_cpu, load_avg and priority every
-         TIMER_FREQ ticks */
+      /* Every TIMER_FREQ ticks, recalculates load_avg, then every thread's
+         recent_cpu and priority.  Every other fourth tick, recalculates the
+         priority of each thread charged a tick since the last one. */
       if (timer_ticks () % TIMER_FREQ == 0)
         {
           calculate_load_avg ();
@@ -203,8 +204,11 @@ thread_tick (void)
         }
       else if (timer_ticks () % PRIORITY_PERIOD == 0)
         {
-          /* Recalculates only the running thread's priority every 4 ticks */
-          update_thread_priority (t, NULL);
+          /* Only threads charged a tick since the last fourth tick can have
+             a stale priority, so recalculate just those. */
+          for (int i = 0; i < charged_cnt; i++)
+            if (charged_threads[i] != NULL)
+              update_thread_priority (charged_threads[i], NULL);
           charged_cnt = 0;
         }
     }
@@ -372,6 +376,13 @@ thread_exit (void)
      and schedule another process.  That process will destroy us
      when it calls thread_schedule_tail(). */
   intr_disable ();
+
+  /* This thread's page is freed once we switch away, so it must not be
+     left in charged_threads for the next fourth tick to update. */
+  for (int i = 0; i < charged_cnt; i++)
+    if (charged_threads[i] == thread_current ())
+      charged_threads[i] = NULL;
+
   list_remove (&thread_current ()->allelem);
   thread_current ()->status = THREAD_DYING;
   schedule ();
