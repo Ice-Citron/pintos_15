@@ -35,6 +35,7 @@
 static bool sema_elem_cmp_priority (const struct list_elem *a,
                                     const struct list_elem *b,
                                     void *aux UNUSED);
+static void lock_refresh_max_wait_priority (struct lock *lock);
 
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
@@ -205,27 +206,6 @@ lock_init (struct lock *lock)
   sema_init (&lock->semaphore, 1);
 }
 
-/*
-Refresh the maximum priority of the waiters in a lock.
-*/
-void
-lock_refresh_max_wait_priority (struct lock *lock)
-{
-
-  /* The maximum waiter priority should default to PRI_MIN,
-  only changing based on current waiters (if any) */
-  lock->max_waiter_priority = PRI_MIN;
-
-  for (struct list_elem *waiter_elem = list_begin (&lock->semaphore.waiters);
-       waiter_elem != list_end (&lock->semaphore.waiters);
-       waiter_elem = list_next (waiter_elem))
-    {
-      struct thread *waiter = list_entry (waiter_elem, struct thread, elem);
-      if (lock->max_waiter_priority < waiter->priority)
-        lock->max_waiter_priority = waiter->priority;
-    }
-}
-
 /* Acquires LOCK, sleeping until it becomes available if
    necessary.  The lock must not already be held by the current
    thread.
@@ -250,8 +230,8 @@ lock_acquire (struct lock *lock)
 
   /* Avoids the barging problem;
   The barging problem is when the lock is finally released; but in the gap
-  between it being released the lock being acquired, another lock could acquire
-  the lock.
+  between it being released and the lock being acquired, another thread could 
+  acquire the lock.
 
   The purpose of the code below is: attempt to acquire the semaphore, if
   unsuccessful then donate priorities, wait for it, and block the thread until
@@ -496,4 +476,26 @@ sema_elem_cmp_priority (const struct list_elem *a, const struct list_elem *b,
   highest_b = list_max (waiters_b, thread_elem_cmp_priority, NULL);
 
   return thread_elem_cmp_priority (highest_a, highest_b, NULL);
+}
+
+/* Refresh the maximum priority of the waiters in a lock. */
+static void
+lock_refresh_max_wait_priority (struct lock *lock)
+{
+  /* 4.4BSD scheduler does not use priority donation */
+  if (thread_mlfqs)
+    return;
+
+  /* The maximum waiter priority should default to PRI_MIN,
+  only changing based on current waiters (if any) */
+  lock->max_waiter_priority = PRI_MIN;
+
+  for (struct list_elem *waiter_elem = list_begin (&lock->semaphore.waiters);
+       waiter_elem != list_end (&lock->semaphore.waiters);
+       waiter_elem = list_next (waiter_elem))
+    {
+      struct thread *waiter = list_entry (waiter_elem, struct thread, elem);
+      if (lock->max_waiter_priority < waiter->priority)
+        lock->max_waiter_priority = waiter->priority;
+    }
 }
