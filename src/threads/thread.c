@@ -421,15 +421,9 @@ thread_refresh_priority (struct thread *t)
     {
       struct lock *current_lock = list_entry (lock_elem, struct lock, elem);
       struct list *curr_waiting_threads = &current_lock->semaphore.waiters;
-      for (waiter_elem = list_begin (curr_waiting_threads);
-           waiter_elem != list_end (curr_waiting_threads);
-           waiter_elem = list_next (waiter_elem))
-        {
-          struct thread *curr_waiting_thread = list_entry (waiter_elem,
-                                                           struct thread, elem);
-          if (curr_waiting_thread->priority > t->priority)
-            t->priority = curr_waiting_thread->priority;
-        }
+
+      if (t->priority < current_lock->max_waiter_priority) 
+        t->priority = current_lock->max_waiter_priority;
     }
 }
 
