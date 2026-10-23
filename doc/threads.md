@@ -45,10 +45,8 @@ priority. */
 ```
 
 The `lock` struct was slightly modified to enable it to be tracked by its holder
-in case
-its holder receives donations, and to track the maximum priority of all donors
-waiting
-for said lock.
+in case its holder receives donations, and to track the maximum priority of all 
+donors waiting for said lock.
 
 ```c
 struct thread
@@ -85,17 +83,16 @@ struct thread
 
 The `thread` struct was modified to track a "base priority" distinct from its 
 effective/donated priorities, and to track locks it is holding (to receive
-donations),
-and the lock it is waiting on (to give donations).
+donations), and the lock it is waiting on (to give donations).
 
 `int priority;` in `struct thread` (`src/threads/thread.h`)
 The effective priority used by the scheduler and returned by
-`thread_get_priority()`. It can be raised above the threads own priority
+`thread_get_priority()`. It can be raised above the threads own priority 
 while a higher priority thread waits for one of its locks.
 
 `int base_priority;` in `struct thread` (`src/threads/thread.h`)
-The thread's original priority set during `thread_init()` and updated by
-`thread_set_priority()`. We keep it separate so donations can temporarily
+The thread's original priority set during `thread_init()` and updated by 
+`thread_set_priority()`. We keep it separate so donations can temporarily 
 raise the effective priority without losing the value the thread chose.
 
 
@@ -119,12 +116,11 @@ thread_elem_cmp_priority (const struct list_elem *a, const struct list_elem *b,
 }
 ```
 The `thread_elem_cmp_priority` comparator is used to find the HPW of a
-semaphore,
-(i.e. Highest Priority Waiter, highest effective priority thread in the
-semaphore's waiting list.)
+semaphore, (i.e. Highest Priority Waiter, highest effective priority 
+thread in the semaphore's waiting list.)
 It does this, by getting the effective priorities of two threads in a
-semaphore's waiting list,
-A and B, and returning whether A's effective priority is strictly less than B's.
+semaphore's waiting list, A and B, and returning whether A's effective 
+priority is strictly less than B's.
 
 
 ```c
@@ -138,9 +134,8 @@ A and B, and returning whether A's effective priority is strictly less than B's.
 ```
 
 The `list_max` function is used to obtain the semaphore's HPW using
-`thread_elem_cmp_priority`, 
-then this highest priority element is "popped" or removed from the semaphore's
-waiter's list; 
+`thread_elem_cmp_priority`, then this highest priority element is 
+"popped" or removed from the semaphore's waiter's list; 
 as this runs in a critical section it will not be preempted.
 
 > **(ii) lock**
@@ -239,10 +234,9 @@ cond_signal (struct condition *cond, struct lock *lock UNUSED)
 ```
 
 A condition variable compares semaphores in its waiting semaphores list, to find
-the
-semaphore with the highest priority HPW. 
-Again, `list_max` with a comparator is used to perform this. T
-hen, this semaphore is removed from the waiter's list, and it is upped, 
+the semaphore with the highest priority HPW. 
+Again, `list_max` with a comparator is used to perform this. 
+Then, this semaphore is removed from the waiter's list, and it is upped, 
 which uses the semaphore logic to unblock its HPW which is thus also the 
 waiting thread with the highest priority in the whole condition variable's
 waiting list.
@@ -304,11 +298,9 @@ NULL.
 ```
 
 Firstly, interrupts are disabled with `intr_disable` to ensure nested priority
-donation and lock acquisition
-happen atomically; this is because if interrupts were NOT disabled, another
-thread could pre-empt
-the current thread and release/acquire a lock, breaking the whole chain of
-priority donations.
+donation and lock acquisition happen atomically; this is because if interrupts 
+were NOT disabled, another thread could pre-empt the current thread and 
+release/acquire a lock, breaking the whole chain of priority donations.
 
 The barging problem is when the lock is finally released; but in the gap between
  it being released and the lock being acquired, another thread could acquire 
@@ -317,31 +309,26 @@ acquired. If it is acquired, the code continues, otherwise, if the semaphore is
 not acquired, the donation process begins.
 
 Then, the lock that the current thread is waiting on is recorded as
-`curr_waiting_lock`; through which its
-holder is identified to be able to perform priority donations to said holder.
+`curr_waiting_lock`; through which its holder is identified to be 
+able to perform priority donations to said holder.
 
 Then, a `while` loop is used to find the holder of `curr_waiting_lock`; and
-then, if its priority needs
-donation (i.e. its priority is lower than `cur->priority`), then the current
-thread donates its priority to
+then, if its priority needs donation (i.e. its priority is lower than 
+`cur->priority`), then the current thread donates its priority to
 this thread. At the same time, the maximum waiter priority of
-`curr_waiting_lock` is updated to reflect if
-the priority of the previous waiter was changed due to donation.
-Note that all donations down the priority thread come from the current waiting
-thread.
+`curr_waiting_lock` is updated to reflect if the priority of the previous 
+waiter was changed due to donation. Note that all donations down the 
+priority thread come from the current waiting thread.
 
 (While the previous waiter does not exist, it is compared to the current thread
-instead, but when it does,
-it follows a size comparison of `previous_waiter_thread priority=curr priority`
-if priority WAS donated,
+instead, but when it does, it follows a size comparison of 
+`previous_waiter_thread priority=curr priority` if priority WAS donated,
 but if priority WAS NOT donated, `curr_priority<=previous_waiter_thread
-priority<=curr lock max priority`
-so  the max waiting priority is NOT updated)
+priority<=curr lock max priority` so the max waiting priority is NOT updated)
 
 Finally, `curr_waiting_lock` is rereferenced to the lock that its holder is
-waiting on, to support nested
-donations, and move down the chain. This process repeats for every lock and
-thread down the chain, so that
+waiting on, to support nested donations, and move down the chain. This 
+process repeats for every lock and thread down the chain, so that
 every thread receives the correct donation, and every lock stores the correct
 maximum waiting priority.
 
@@ -383,20 +370,16 @@ lock_release (struct lock *lock)
 ```
 
 Firstly, interrupts are disabled to prevent pre-emption (otherwise, another
-thread may
-immediately acquire this lock).
+thread may immediately acquire this lock).
 Then, the lock's holder is set to `NULL` to reflect that the lock is not held by
-any thread
-anymore (a lock can only be held by one thread), and the lock is removed from
-its holder's (which is the current thread)
-"held locks" list. Now, the lock is "released". Then, as the lock was removed
-from the current thread,
+any thread anymore (a lock can only be held by one thread), and the lock is 
+removed from its holder's (which is the current thread) "held locks" list. 
+
+Now, the lock is "released". Then, as the lock was removed from the current thread,
 the current thread's effective priority is refreshed to reflect that any
-donations made towards this thread through 
-this lock are void.
+donations made towards this thread through this lock are void.
 Then, the semaphore of this lock is "upped" to yield to this higher priority
-thread.
-Finally, interrupts are re-enabled.
+thread. Finally, interrupts are re-enabled.
 
 ---- SYNCHRONISATION ----
 
@@ -417,9 +400,8 @@ mutated by other threads when donating in `lock_acquire`.
 
 So, every lock in the `held_locks` list would need to have a lock; Having a 
 "lock-on-lock". Actually, now, every single one of these "locks-on-locks" would 
-need to be acquired every single time the
-thread wants to refresh priorities. This would then add to `held_locks` again,
-mutating it;
+need to be acquired every single time the thread wants to refresh priorities. 
+This would then add to `held_locks` again, mutating it;
 This violates the purpose of having the lock, as acquiring locks itself races
 with protecting the lock list. 
 Then, the whole priority donation mechanism is reiterated through, mutating
