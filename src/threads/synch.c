@@ -482,9 +482,9 @@ sema_elem_cmp_priority (const struct list_elem *a, const struct list_elem *b,
 static void
 lock_refresh_max_wait_priority (struct lock *lock)
 {
-  /* 4.4BSD scheduler does not use priority donation */
+  /* 4.4BSD scheduler does not use priority donation 
   if (thread_mlfqs)
-    return;
+    return; */
 
   /* The maximum waiter priority should default to PRI_MIN,
   only changing based on current waiters (if any) */
