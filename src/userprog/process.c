@@ -42,6 +42,7 @@ tid_t
 process_execute (const char *cmd_line) 
 {
   char *cmd_line_copy;
+  struct child_record *record;
   tid_t tid;
 
   /* Make a copy of CMD_LINE.
@@ -51,11 +52,29 @@ process_execute (const char *cmd_line)
     return TID_ERROR;
   strlcpy (cmd_line_copy, cmd_line, PGSIZE);
 
+  /* Make a record of the childs exit status for the caller to keep */
+  record = malloc (sizeof *record);
+  if (record == NULL)
+    {
+      palloc_free_page (cmd_line_copy);
+      return TID_ERROR;
+    }
+  sema_init (&record->exited, 0);
+  list_elem_init (&record->elem);
+
   /* Create a new thread to execute CMD_LINE. */
   tid = thread_create (cmd_line, PRI_DEFAULT, start_process, cmd_line_copy);
   if (tid == TID_ERROR)
-    palloc_free_page (cmd_line_copy);
-    
+    {
+      palloc_free_page (cmd_line_copy);
+      free (record);
+    }
+  else
+    {
+      /* The child may have exited already, but its record outlives it */
+      record->tid = tid;
+      list_push_back (&thread_current ()->process->children, &record->elem);
+    }
   return tid;
 }
 
