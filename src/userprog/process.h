@@ -1,6 +1,7 @@
 #ifndef USERPROG_PROCESS_H
 #define USERPROG_PROCESS_H
 
+#include <list.h>
 #include "threads/synch.h"
 #include "threads/thread.h"
 
@@ -13,6 +14,7 @@ struct child_record
     tid_t tid;                /* Thread identifier of the child */
     int exit_code;            /* Set by the child when it exits */
     struct semaphore exited;  /* Upped by the child when it exits */
+    struct list_elem elem;    /* Element in the parents children list */
   };
 
 /* A user process, wrapped around a kernel thread. */
@@ -20,6 +22,8 @@ struct process
   {
     uint32_t *pagedir;      /* Process page directory. */
     struct thread *thread;  /* Process underlying kernel thread. */
+    struct child_record *record;  /* Shared with the parent, null for root. */
+    struct list children;         /* Records of children not waited for. */
   };
 
 void root_process_init (void);

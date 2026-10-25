@@ -19,7 +19,7 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 
-static bool process_init (struct thread *t);
+static bool process_init (struct thread *t, struct child_record *record);
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
@@ -29,7 +29,7 @@ void
 root_process_init (void)
 {
   struct thread *cur = thread_current ();
-  bool success = process_init (cur);
+  bool success = process_init (cur, NULL);
   
   if (!success)
     PANIC("Unable to initialise root OS process.");
@@ -61,7 +61,7 @@ process_execute (const char *cmd_line)
 
 /* Basic initialisation of a process running on thread T. */
 static bool 
-process_init (struct thread *t)
+process_init (struct thread *t, struct child_record *record)
 {
   /* Create process struct to store process meta-data */
   struct process *process = malloc (sizeof(struct process));
@@ -71,6 +71,8 @@ process_init (struct thread *t)
   /* Initialise process attributes. */
   process->pagedir = NULL;
   process->thread = t;
+  process->record = record;
+  list_init (&process->children);
   
   /* Link thread to its process. */
   t->process = process;
@@ -88,7 +90,7 @@ start_process (void *args_)
   bool success;
   
   /* Initialise process. */
-  success = process_init (cur);
+  success = process_init (cur, NULL);
 
   if (success)
     {
