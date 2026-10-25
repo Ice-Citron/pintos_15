@@ -154,13 +154,25 @@ start_process (void *args_)
  * returns -1.  
  * If TID is invalid or if it was not a child of the calling process, or if 
  * process_wait() has already been successfully called for the given TID, 
- * returns -1 immediately, without waiting.
- * 
- * This function will be implemented in task 2.
- * For now, it does nothing. */
+ * returns -1 immediately, without waiting. */
 int
-process_wait (tid_t child_tid UNUSED) 
+process_wait (tid_t child_tid)
 {
+  struct list *children = &thread_current ()->process->children;
+  struct list_elem *e;
+
+  for (e = list_begin (children); e != list_end (children); e = list_next (e))
+    {
+      struct child_record *child = list_entry (e, struct child_record, elem);
+
+      if (child->tid != child_tid)
+        continue;
+
+      /* Each child can only be waited for once */
+      sema_down (&child->exited);
+      list_remove (e);
+      return child->exit_code;
+    }
   return PROC_ERR;
 }
 
