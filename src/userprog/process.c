@@ -44,13 +44,19 @@ root_process_init (void)
 
 /* Starts a new thread running a user program loaded from CMD_LINE.
    The new thread may be scheduled (and may even exit) before process_execute() returns.
-   Returns the new process's thread id, or TID_ERROR if the thread cannot be created. */
+   Returns the new process's thread id, or TID_ERROR if CMD_LINE has no
+   program name or the thread cannot be created. */
 tid_t
 process_execute (const char *cmd_line) 
 {
   struct process_args *args;
   struct child_record *record;
   tid_t tid = TID_ERROR;
+
+  /* The first word is the program name, so skip any spaces before it */
+  cmd_line += strspn (cmd_line, " ");
+  if (*cmd_line == '\0')
+    return TID_ERROR;
 
   /* Make a copy of CMD_LINE.
      Otherwise there's a race between the caller and load(). */
