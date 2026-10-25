@@ -123,6 +123,7 @@ start_process (void *args_)
   struct thread *cur = thread_current ();
   struct process_args *args = args_;
   struct intr_frame if_;
+  char *program, *save_ptr;
   bool success;
   
   /* Initialise process. */
@@ -130,12 +131,17 @@ start_process (void *args_)
 
   if (success)
     {
+    /* The first word is the program, the rest are its arguments.
+      Name the thread after the program for the exit message */
+      program = strtok_r (args->cmd_line, " ", &save_ptr);
+      strlcpy (cur->name, program, sizeof cur->name);
+
       /* Initialize interrupt frame and load executable. */
       memset (&if_, 0, sizeof if_);
       if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
       if_.cs = SEL_UCSEG;
       if_.eflags = FLAG_IF | FLAG_MBS;
-      success = load (args->cmd_line, &if_.eip, &if_.esp);
+      success = load (program, &if_.eip, &if_.esp);
     }
 
   /* After loading, we are done with the command-line copy passed to us by process_execute. */
