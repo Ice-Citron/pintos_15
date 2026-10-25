@@ -158,7 +158,7 @@ process_wait (tid_t child_tid UNUSED)
 
 /* Free the current process's resources and then exit the underlying thread. */
 void
-process_exit (int exit_code UNUSED)
+process_exit (int exit_code)
 {
   struct process *cur = thread_current ()->process;
   uint32_t *pd;
@@ -166,7 +166,15 @@ process_exit (int exit_code UNUSED)
   /* Clean up all process memory footprint, if it exists. */
   if (cur != NULL)
     {  
+      struct child_record *record = cur->record;
 
+      /* Tell the parent how this process ended */
+      if (record != NULL)
+        {
+          record->exit_code = exit_code;
+          sema_up (&record->exited);
+        }
+    
       /* Destroy the current process's page directory and switch back
          to the kernel-only page directory. */
       pd = cur->pagedir;
