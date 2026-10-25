@@ -88,7 +88,15 @@ process_init (struct thread *t, struct child_record *record)
   /* Create process struct to store process meta-data */
   struct process *process = malloc (sizeof(struct process));
   if (process == NULL)
-    return false;
+    {
+      /* Don't leave a waiting parent hanging */
+      if (record != NULL)
+        {
+          record->exit_code = PROC_ERR;
+          sema_up (&record->exited);
+        }
+      return false;
+    }
 
   /* Initialise process attributes. */
   process->pagedir = NULL;
@@ -174,7 +182,7 @@ process_exit (int exit_code)
           record->exit_code = exit_code;
           sema_up (&record->exited);
         }
-    
+
       /* Destroy the current process's page directory and switch back
          to the kernel-only page directory. */
       pd = cur->pagedir;
