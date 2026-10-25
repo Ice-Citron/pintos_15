@@ -164,14 +164,17 @@ process_wait (tid_t child_tid)
   for (e = list_begin (children); e != list_end (children); e = list_next (e))
     {
       struct child_record *child = list_entry (e, struct child_record, elem);
+      int exit_code;
 
       if (child->tid != child_tid)
         continue;
 
       /* Each child can only be waited for once */
       sema_down (&child->exited);
+      exit_code = child->exit_code;
       list_remove (e);
-      return child->exit_code;
+      free (child);
+      return exit_code;
     }
   return PROC_ERR;
 }
