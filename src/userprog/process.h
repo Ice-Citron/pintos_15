@@ -1,10 +1,19 @@
 #ifndef USERPROG_PROCESS_H
 #define USERPROG_PROCESS_H
 
+#include "threads/synch.h"
 #include "threads/thread.h"
 
 #define PROC_SUCC (0)  /* Exit code for normal process termination. */
 #define PROC_ERR (-1)  /* Exit code for erroneous process termination. */
+
+/* A childs exit status which its parent keeps until it waits for it */
+struct child_record
+  {
+    tid_t tid;                /* Thread identifier of the child */
+    int exit_code;            /* Set by the child when it exits */
+    struct semaphore exited;  /* Upped by the child when it exits */
+  };
 
 /* A user process, wrapped around a kernel thread. */
 struct process
