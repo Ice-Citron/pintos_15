@@ -50,28 +50,23 @@ process_execute (const char *cmd_line)
 {
   struct process_args *args;
   struct child_record *record;
-  tid_t tid;
+  tid_t tid = TID_ERROR;
 
   /* Make a copy of CMD_LINE.
      Otherwise there's a race between the caller and load(). */
   args = palloc_get_page (0);
-  if (args == NULL)
-    return TID_ERROR;
-  strlcpy (args->cmd_line, cmd_line, PGSIZE - sizeof *args);
-
-  /* Make a record of the childs exit status for the caller to keep */
   record = malloc (sizeof *record);
-  if (record == NULL)
+  if (args != NULL && record != NULL)
     {
-      palloc_free_page (args);
-      return TID_ERROR;
-    }
-  sema_init (&record->exited, 0);
-  list_elem_init (&record->elem);
-  args->record = record;
+      strlcpy (args->cmd_line, cmd_line, PGSIZE - sizeof *args);
+      args->record = record;
+      sema_init (&record->exited, 0);
+      list_elem_init (&record->elem);
 
-  /* Create a new thread to execute CMD_LINE. */
-  tid = thread_create (cmd_line, PRI_DEFAULT, start_process, args);
+      /* Create a new thread to execute CMD_LINE */
+      tid = thread_create (cmd_line, PRI_DEFAULT, start_process, args);
+    }
+
   if (tid == TID_ERROR)
     {
       palloc_free_page (args);
