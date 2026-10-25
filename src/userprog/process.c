@@ -216,6 +216,7 @@ process_exit (int exit_code)
       this process has let go of everything. */
       if (record != NULL)
         {
+          printf ("%s: exit(%d)\n", thread_name (), exit_code);
           record->exit_code = exit_code;
           sema_up (&record->exited);
         }
