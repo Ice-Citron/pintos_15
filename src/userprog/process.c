@@ -19,6 +19,13 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 
+/* Passed from process_execute() to start_process() */
+struct process_args
+  {
+    struct child_record *record;  /* Where the new process reports its exit */
+    char cmd_line[];              /* Copy of the command line */
+  };
+
 static bool process_init (struct thread *t, struct child_record *record);
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -41,32 +48,33 @@ root_process_init (void)
 tid_t
 process_execute (const char *cmd_line) 
 {
-  char *cmd_line_copy;
+  struct process_args *args;
   struct child_record *record;
   tid_t tid;
 
   /* Make a copy of CMD_LINE.
      Otherwise there's a race between the caller and load(). */
-  cmd_line_copy = palloc_get_page (0);
-  if (cmd_line_copy == NULL)
+  args = palloc_get_page (0);
+  if (args == NULL)
     return TID_ERROR;
-  strlcpy (cmd_line_copy, cmd_line, PGSIZE);
+  strlcpy (args->cmd_line, cmd_line, PGSIZE - sizeof *args);
 
   /* Make a record of the childs exit status for the caller to keep */
   record = malloc (sizeof *record);
   if (record == NULL)
     {
-      palloc_free_page (cmd_line_copy);
+      palloc_free_page (args);
       return TID_ERROR;
     }
   sema_init (&record->exited, 0);
   list_elem_init (&record->elem);
+  args->record = record;
 
   /* Create a new thread to execute CMD_LINE. */
-  tid = thread_create (cmd_line, PRI_DEFAULT, start_process, cmd_line_copy);
+  tid = thread_create (cmd_line, PRI_DEFAULT, start_process, args);
   if (tid == TID_ERROR)
     {
-      palloc_free_page (cmd_line_copy);
+      palloc_free_page (args);
       free (record);
     }
   else
@@ -104,12 +112,12 @@ static void
 start_process (void *args_)
 {
   struct thread *cur = thread_current ();
-  char *file_name = args_;
+  struct process_args *args = args_;
   struct intr_frame if_;
   bool success;
   
   /* Initialise process. */
-  success = process_init (cur, NULL);
+  success = process_init (cur, args->record);
 
   if (success)
     {
@@ -118,11 +126,11 @@ start_process (void *args_)
       if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
       if_.cs = SEL_UCSEG;
       if_.eflags = FLAG_IF | FLAG_MBS;
-      success = load (file_name, &if_.eip, &if_.esp);
+      success = load (args->cmd_line, &if_.eip, &if_.esp);
     }
 
   /* After loading, we are done with the command-line copy passed to us by process_execute. */
-  palloc_free_page (file_name);
+  palloc_free_page (args);
   
   /* If load failed, terminate the process. */
   if (!success) 
