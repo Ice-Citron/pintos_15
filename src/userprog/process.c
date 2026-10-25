@@ -191,13 +191,6 @@ process_exit (int exit_code)
     {  
       struct child_record *record = cur->record;
 
-      /* Tell the parent how this process ended */
-      if (record != NULL)
-        {
-          record->exit_code = exit_code;
-          sema_up (&record->exited);
-        }
-
       /* Destroy the current process's page directory and switch back
          to the kernel-only page directory. */
       pd = cur->pagedir;
@@ -218,6 +211,14 @@ process_exit (int exit_code)
       /* Finally, destroy the current process's struct */
       thread_current ()->process = NULL;
       free(cur);
+
+      /* Report the exit.  Wake the parent last, so that it only resumes once
+      this process has let go of everything. */
+      if (record != NULL)
+        {
+          record->exit_code = exit_code;
+          sema_up (&record->exited);
+        }
     }
     
   /* Now terminate the thread underlying this process. */
