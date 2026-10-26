@@ -183,18 +183,29 @@ push (void **esp, const void *data, size_t size)
   return true;
 }
 
-/* Pushes the command line LINE which is SIZE bytes long with a null for
-   every space onto the user stack at *ESP and aligns the stack pointer
-   after it. Returns false if it doesn't fit in the stack page. */
+/* Sets up the user stack at *ESP for the command line LINE, which is SIZE
+   bytes long with a null for every space:pushes the words and then argv[].
+   Returns false if it doesn't fit in the stack page. */
 static bool
 push_arguments (void **esp, const char *line, size_t size)
 {
+  void *null = NULL;
+  const char *word, *first;
+
   /* The line alr holds the words in order so it goes on as it is */
   if (!push (esp, line, size))
     return false;
+  first = *esp;
 
-  /* align the stack for the pointers that go below */
+  /* Align the stack, then push argv[argc] and the pointers to the words,
+   * last word first, so that argv[0] is at the lowest address. */
   *esp = (void *) ROUND_DOWN ((uintptr_t) *esp, sizeof (uint32_t));
+  if (!push (esp, &null, sizeof null))
+    return false;
+  for (word = (const char *) PHYS_BASE - 1; word >= first; word--)
+    if (*word != '\0' && (word == first || word[-1] == '\0'))
+      if (!push (esp, &word, sizeof word))
+        return false;
   return true;
 }
 
