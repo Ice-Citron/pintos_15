@@ -123,7 +123,7 @@ start_process (void *args_)
   struct thread *cur = thread_current ();
   struct process_args *args = args_;
   struct intr_frame if_;
-  char *program, *save_ptr;
+  char *program, *p;
   bool success;
   
   /* Initialise process. */
@@ -131,10 +131,13 @@ start_process (void *args_)
 
   if (success)
     {
-    /* The first word is the program, the rest are its arguments.
-      Name the thread after the program for the exit message */
-      program = strtok_r (args->cmd_line, " ", &save_ptr);
-      strlcpy (cur->name, program, sizeof cur->name);
+    /* Turn every space in the command line into a null so that it is a
+      run of words. The first is the program so name the thread after it
+      for the exit message. */
+      program = args->cmd_line;
+      for (p = program; *p != '\0'; p++)
+        if (*p == ' ')
+          *p = '\0';
 
       /* Initialize interrupt frame and load executable. */
       memset (&if_, 0, sizeof if_);
