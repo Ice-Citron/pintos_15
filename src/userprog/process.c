@@ -183,14 +183,16 @@ push (void **esp, const void *data, size_t size)
   return true;
 }
 
-/* Sets up the user stack at *ESP for the command line LINE, which is SIZE
-   bytes long with a null for every space:pushes the words and then argv[].
-   Returns false if it doesn't fit in the stack page. */
+/* Sets up the user stack at *ESP for the command line LINE which is SIZE
+   bytes long with a null for every space:pushes the words, argv, argc and a
+   fake return address. Returns false if they don't fit in the stack page */
 static bool
 push_arguments (void **esp, const char *line, size_t size)
 {
   void *null = NULL;
   const char *word, *first;
+  void *argv;
+  int argc = 0;
 
   /* The line alr holds the words in order so it goes on as it is */
   if (!push (esp, line, size))
@@ -204,9 +206,14 @@ push_arguments (void **esp, const char *line, size_t size)
     return false;
   for (word = (const char *) PHYS_BASE - 1; word >= first; word--)
     if (*word != '\0' && (word == first || word[-1] == '\0'))
-      if (!push (esp, &word, sizeof word))
-        return false;
-  return true;
+      {
+        if (!push (esp, &word, sizeof word))
+          return false;
+        argc++;
+      }
+  argv = *esp;
+  return push (esp, &argv, sizeof argv) && push (esp, &argc, sizeof argc)
+         && push (esp, &null, sizeof null);
 }
 
 /* Waits for thread TID to die and returns its exit status. 
