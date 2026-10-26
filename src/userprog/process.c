@@ -184,13 +184,18 @@ push (void **esp, const void *data, size_t size)
 }
 
 /* Pushes the command line LINE which is SIZE bytes long with a null for
-   every space onto the user stack at *ESP. Returns false if it doesn't fit
-   in the stack page. */
+   every space onto the user stack at *ESP and aligns the stack pointer
+   after it. Returns false if it doesn't fit in the stack page. */
 static bool
 push_arguments (void **esp, const char *line, size_t size)
 {
   /* The line alr holds the words in order so it goes on as it is */
-  return push (esp, line, size);
+  if (!push (esp, line, size))
+    return false;
+
+  /* align the stack for the pointers that go below */
+  *esp = (void *) ROUND_DOWN ((uintptr_t) *esp, sizeof (uint32_t));
+  return true;
 }
 
 /* Waits for thread TID to die and returns its exit status. 
