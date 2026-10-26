@@ -29,6 +29,8 @@ struct process_args
 static bool process_init (struct thread *t, struct child_record *record);
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
+static bool push (void **esp, const void *data, size_t size);
+static bool push_arguments (void **esp, const char *line, size_t size);
 
 /* Initialises the main thread as a minimal root OS process.
    Note that when this thread/process terminates, the OS will shutdown. */
@@ -124,6 +126,7 @@ start_process (void *args_)
   struct process_args *args = args_;
   struct intr_frame if_;
   char *program, *p;
+  size_t size;
   bool success;
   
   /* Initialise process. */
@@ -138,13 +141,16 @@ start_process (void *args_)
       for (p = program; *p != '\0'; p++)
         if (*p == ' ')
           *p = '\0';
+      size = p - program + 1;
+      strlcpy (cur->name, program, sizeof cur->name);
 
       /* Initialize interrupt frame and load executable. */
       memset (&if_, 0, sizeof if_);
       if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
       if_.cs = SEL_UCSEG;
       if_.eflags = FLAG_IF | FLAG_MBS;
-      success = load (program, &if_.eip, &if_.esp);
+      success = load (program, &if_.eip, &if_.esp)
+                && push_arguments (&if_.esp, program, size);
     }
 
   /* After loading, we are done with the command-line copy passed to us by process_execute. */
@@ -162,6 +168,29 @@ start_process (void *args_)
      and jump to it. */
   asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
   NOT_REACHED ();
+}
+
+/* Pushes SIZE bytes at DATA onto the user stack at *ESP. Returns false if
+   there is no room left in the stack page. */
+static bool
+push (void **esp, const void *data, size_t size)
+{
+  uint8_t *bottom = (uint8_t *) PHYS_BASE - PGSIZE;
+  if (size > (size_t) ((uint8_t *) *esp - bottom))
+    return false;
+  *esp = (uint8_t *) *esp - size;
+  memcpy (*esp, data, size);
+  return true;
+}
+
+/* Pushes the command line LINE which is SIZE bytes long with a null for
+   every space onto the user stack at *ESP. Returns false if it doesn't fit
+   in the stack page. */
+static bool
+push_arguments (void **esp, const char *line, size_t size)
+{
+  /* The line alr holds the words in order so it goes on as it is */
+  return push (esp, line, size);
 }
 
 /* Waits for thread TID to die and returns its exit status. 
