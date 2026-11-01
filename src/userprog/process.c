@@ -277,6 +277,12 @@ process_exit (int exit_code)
     {  
       struct child_record *record = cur->record;
 
+      /* Let go of the records of children that were never waited for. Each
+         is freed here or by its child, whichever lets go last. */
+      while (!list_empty (&cur->children))
+        child_record_release (list_entry (list_pop_front (&cur->children),
+                                          struct child_record, elem));
+
       /* Destroy the current process's page directory and switch back
          to the kernel-only page directory. */
       pd = cur->pagedir;
