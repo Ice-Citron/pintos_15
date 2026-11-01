@@ -19,11 +19,15 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 
-/* Passed from process_execute() to start_process() */
+/* Passed from process_execute() to start_process().  It lives on the
+   parent's stack, which is safe because the parent waits until the child
+   has loaded. */
 struct process_args
   {
-    struct child_record *record;  /* Where the new process reports its exit */
-    char cmd_line[];              /* Copy of the command line */
+    char *cmd_line;               /* Page holding a copy of the command line. */
+    struct child_record *record;  /* Where the new process reports its exit. */
+    struct semaphore loaded;      /* Upped by the child once it has loaded. */
+    bool load_success;            /* Whether the child loaded. */
   };
 
 static bool process_init (struct thread *t, struct child_record *record);
@@ -48,11 +52,12 @@ root_process_init (void)
 /* Starts a new thread running a user program loaded from CMD_LINE.
    The new thread may be scheduled (and may even exit) before process_execute() returns.
    Returns the new process's thread id, or TID_ERROR if CMD_LINE has no
-   program name or the thread cannot be created. */
+   program name, the thread cannot be created or the program fails to
+   load. */
 tid_t
 process_execute (const char *cmd_line) 
 {
-  struct process_args *args;
+  struct process_args args;
   struct child_record *record;
   tid_t tid = TID_ERROR;
 
@@ -63,32 +68,45 @@ process_execute (const char *cmd_line)
 
   /* Make a copy of CMD_LINE.
      Otherwise there's a race between the caller and load(). */
-  args = palloc_get_page (0);
+  args.cmd_line = palloc_get_page (0);
   record = malloc (sizeof *record);
-  if (args != NULL && record != NULL)
+  if (args.cmd_line != NULL && record != NULL)
     {
-      strlcpy (args->cmd_line, cmd_line, PGSIZE - sizeof *args);
-      args->record = record;
+      strlcpy (args.cmd_line, cmd_line, PGSIZE);
+      args.record = record;
+      sema_init (&args.loaded, 0);
       sema_init (&record->exited, 0);
       lock_init (&record->lock);
       record->ref_cnt = 2;
       list_elem_init (&record->elem);
 
       /* Create a new thread to execute CMD_LINE */
-      tid = thread_create (cmd_line, PRI_DEFAULT, start_process, args);
+      tid = thread_create (cmd_line, PRI_DEFAULT, start_process, &args);
     }
 
   if (tid == TID_ERROR)
-    {
-      palloc_free_page (args);
-      free (record);
-    }
+    free (record);
   else
     {
-      /* The child may have exited already, but its record outlives it */
-      record->tid = tid;
-      list_push_back (&thread_current ()->process->children, &record->elem);
+      /* Exec has to report whether the program loaded, so wait for the
+         child to find out. */
+      sema_down (&args.loaded);
+      if (args.load_success)
+        {
+          /* The child may have exited already, but its record outlives it */
+          record->tid = tid;
+          list_push_back (&thread_current ()->process->children,
+                          &record->elem);
+        }
+      else
+        {
+          child_record_release (record);
+          tid = TID_ERROR;
+        }
     }
+
+  /* The child is done with the command line once it has loaded. */
+  palloc_free_page (args.cmd_line);
   return tid;
 }
 
@@ -100,13 +118,10 @@ process_init (struct thread *t, struct child_record *record)
   struct process *process = malloc (sizeof(struct process));
   if (process == NULL)
     {
-      /* Don't leave a waiting parent hanging */
+      /* This process never gets as far as process_exit (), so let go of
+         its record here. */
       if (record != NULL)
-        {
-          record->exit_code = PROC_ERR;
-          sema_up (&record->exited);
-          child_record_release (record);
-        }
+        child_record_release (record);
       return false;
     }
 
@@ -157,8 +172,11 @@ start_process (void *args_)
                 && push_arguments (&if_.esp, program, size);
     }
 
-  /* After loading, we are done with the command-line copy passed to us by process_execute. */
-  palloc_free_page (args);
+  /* Tell the parent whether the load worked.  ARGS is on the parent's
+     stack and the parent carries on as soon as it wakes, so this is the
+     last use of it. */
+  args->load_success = success;
+  sema_up (&args->loaded);
   
   /* If load failed, terminate the process. */
   if (!success) 
