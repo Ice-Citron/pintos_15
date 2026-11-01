@@ -14,6 +14,8 @@ struct child_record
     tid_t tid;                /* Thread identifier of the child */
     int exit_code;            /* Set by the child when it exits */
     struct semaphore exited;  /* Upped by the child when it exits */
+    struct lock lock;         /* Protects ref_cnt. */
+    int ref_cnt;              /* How many of parent and child still hold it. */
     struct list_elem elem;    /* Element in the parents children list */
   };
 

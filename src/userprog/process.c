@@ -31,6 +31,7 @@ static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 static bool push (void **esp, const void *data, size_t size);
 static bool push_arguments (void **esp, const char *line, size_t size);
+static void child_record_release (struct child_record *record);
 
 /* Initialises the main thread as a minimal root OS process.
    Note that when this thread/process terminates, the OS will shutdown. */
@@ -69,6 +70,8 @@ process_execute (const char *cmd_line)
       strlcpy (args->cmd_line, cmd_line, PGSIZE - sizeof *args);
       args->record = record;
       sema_init (&record->exited, 0);
+      lock_init (&record->lock);
+      record->ref_cnt = 2;
       list_elem_init (&record->elem);
 
       /* Create a new thread to execute CMD_LINE */
@@ -102,6 +105,7 @@ process_init (struct thread *t, struct child_record *record)
         {
           record->exit_code = PROC_ERR;
           sema_up (&record->exited);
+          child_record_release (record);
         }
       return false;
     }
@@ -240,10 +244,25 @@ process_wait (tid_t child_tid)
       sema_down (&child->exited);
       exit_code = child->exit_code;
       list_remove (e);
-      free (child);
+      child_record_release (child);
       return exit_code;
     }
   return PROC_ERR;
+}
+
+/* Drops one hold on RECORD, freeing it if neither the parent nor the child
+   holds it any more. */
+static void
+child_record_release (struct child_record *record)
+{
+  bool last;
+
+  lock_acquire (&record->lock);
+  last = --record->ref_cnt == 0;
+  lock_release (&record->lock);
+
+  if (last)
+    free (record);
 }
 
 /* Free the current process's resources and then exit the underlying thread. */
@@ -286,6 +305,7 @@ process_exit (int exit_code)
           printf ("%s: exit(%d)\n", thread_name (), exit_code);
           record->exit_code = exit_code;
           sema_up (&record->exited);
+          child_record_release (record);
         }
     }
     
