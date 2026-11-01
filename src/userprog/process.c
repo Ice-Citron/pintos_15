@@ -129,6 +129,7 @@ process_init (struct thread *t, struct child_record *record)
   process->pagedir = NULL;
   process->thread = t;
   process->record = record;
+  process->executable = NULL;
   list_init (&process->children);
   
   /* Link thread to its process. */
@@ -317,7 +318,10 @@ process_exit (int exit_code)
           pagedir_activate (NULL);
           pagedir_destroy (pd);
         }
-  
+
+      /* Let the executable be written to again. */
+      file_close (cur->executable);
+
       /* Finally, destroy the current process's struct */
       thread_current ()->process = NULL;
       free(cur);
@@ -451,6 +455,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
       goto done; 
     }
 
+  file_deny_write (file);
+
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
       || memcmp (ehdr.e_ident, "\177ELF\1\1\1", 7)
@@ -533,8 +539,13 @@ load (const char *file_name, void (**eip) (void), void **esp)
   success = true;
 
  done:
-  /* We arrive here whether the load is successful or not. */
-  file_close (file);
+  /* We arrive here whether the load is successful or not.  A loaded
+     executable stays open until the process exits, so that it can't be
+     changed while it runs.  Closing it allows writes again. */
+  if (success)
+    cur->executable = file;
+  else
+    file_close (file);
   return success;
 }
 

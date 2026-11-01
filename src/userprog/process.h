@@ -25,6 +25,7 @@ struct process
     uint32_t *pagedir;      /* Process page directory. */
     struct thread *thread;  /* Process underlying kernel thread. */
     struct child_record *record;  /* Shared with the parent, null for root. */
+    struct file *executable;      /* Kept open so it can't be written to. */
     struct list children;         /* Records of children not waited for. */
   };
 
