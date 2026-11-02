@@ -1,9 +1,56 @@
 #include "userprog/syscall.h"
 
 static void syscall_handler (struct intr_frame *);
+static void syscall_halt (void);
+static void syscall_exit (int);
+static uint32_t syscall_write (int fd, const void *buffer, unsigned size);
+
+static void
+syscall_halt (void)
+{
+  shutdown_power_off ();
+}
+
+static void
+syscall_exit (int exit_code)
+{
+  process_exit (exit_code);
+}
+
+/*
+Syscall handler that writes size bytes from buffer to the open file fd.
+
+Returns the number of bytes actually written, which may be less than size
+if some bytes could not be written.
+
+Writing past end-of-file would normally extend the file,
+but file growth is not implemented by the basic file system.
+The expected behaviour is to write as many bytes as possible up to
+end-of-file and return the actual number written,
+or 0 if no bytes could be written at all.
+*/
+static uint32_t
+syscall_write (int fd, const void *buffer, unsigned size)
+{
+  /* Track the number of bytes written */
+  uint32_t bytes_written = 0;
+  /* Check if valid address*/
+  if (!safemem_is_valid_addr (buffer))
+    process_exit (-1);
+
+  /* Write to console if the filesystem requires it */
+  if (fd == STDOUT_FILENO)
+    {
+      putbuf (buffer, size);
+      return size;
+    }
+
+  /* TODO: write bytes to file */
+  return bytes_written;
+}
 
 void
-syscall_init (void) 
+syscall_init (void)
 {
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
@@ -32,9 +79,11 @@ syscall_handler (struct intr_frame *f)
     /* Next, read the arguments above the stack pointer. */
     case SYS_HALT:
       /* Halt the operating system. */
+      syscall_halt ();
       break;
     case SYS_EXIT:
       /* Terminate this process. */
+      syscall_exit (safemem_read_syscall_arg (f, 0));
       break;
     case SYS_EXEC:
       /* Start another process. */
@@ -59,6 +108,13 @@ syscall_handler (struct intr_frame *f)
       break;
     case SYS_WRITE:
       /* Write to a file. */
+      {
+        int fd = (int)safemem_read_syscall_arg (f, 0);
+        const void *buffer = (const void *)safemem_read_syscall_arg (f, 1);
+        unsigned size = (unsigned)safemem_read_syscall_arg (f, 2);
+
+        ret_code = syscall_write (fd, buffer, size);
+      }
       break;
     case SYS_SEEK:
       /* Change position in a file. */
@@ -70,9 +126,9 @@ syscall_handler (struct intr_frame *f)
       /* Close a file. */
       break;
     default:
-  process_exit (PROC_ERR);
+      process_exit (PROC_ERR);
       break;
-}
+    }
 
   /* Finally, return the result to f->eax. */
   f->eax = ret_code;
