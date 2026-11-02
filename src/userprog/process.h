@@ -25,6 +25,13 @@ struct file_entry
   struct file *file;     /* File being pointed to of file entry  */
   struct hash_elem elem; /* Hash element of a file entry */
 };
+
+/* Helper functions for process file descriptor table. */
+bool process_fd_table_insert (struct hash *fd_table, int fd,
+                              struct file *entry);
+struct file *process_fd_table_get (struct hash *fd_table, int fd);
+struct file *process_fd_table_delete (struct hash *fd_table, int fd);
+
 /* A user process, wrapped around a kernel thread. */
 struct process
   {
