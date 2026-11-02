@@ -2,6 +2,7 @@
 #define USERPROG_PROCESS_H
 
 #include <list.h>
+#include <hash.h>
 #include "threads/synch.h"
 #include "threads/thread.h"
 
@@ -17,12 +18,20 @@ struct child_record
     struct list_elem elem;    /* Element in the parents children list */
   };
 
+/* A structure for a file entry */
+struct file_entry
+{
+  int fd;                /* File descriptor number */
+  struct file *file;     /* File being pointed to of file entry  */
+  struct hash_elem elem; /* Hash element of a file entry */
+};
 /* A user process, wrapped around a kernel thread. */
 struct process
   {
     uint32_t *pagedir;      /* Process page directory. */
     struct thread *thread;  /* Process underlying kernel thread. */
     struct child_record *record;  /* Shared with the parent, null for root. */
+    struct hash fd_table;         /* File descriptor table for current process. */
     struct list children;         /* Records of children not waited for. */
   };
 
