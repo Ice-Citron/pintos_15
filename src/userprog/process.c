@@ -1,13 +1,4 @@
 #include "userprog/process.h"
-#include <debug.h>
-#include <inttypes.h>
-#include <round.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include "userprog/gdt.h"
-#include "userprog/pagedir.h"
-#include "userprog/tss.h"
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
@@ -18,6 +9,15 @@
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "userprog/gdt.h"
+#include "userprog/pagedir.h"
+#include "userprog/tss.h"
+#include <debug.h>
+#include <inttypes.h>
+#include <round.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 /* Passed from process_execute() to start_process().  It lives on the
    parent's stack, which is safe because the parent waits until the child
@@ -110,6 +110,120 @@ process_execute (const char *cmd_line)
   return tid;
 }
 
+/* Internal function used to hash a process file descriptor
+ */
+static unsigned
+process_file_descriptor_hash (const struct hash_elem *elem, void *aux UNUSED)
+{
+  return hash_int (hash_entry (elem, struct file_entry, elem)->fd);
+}
+
+/* Internal function used to compare two elements in a process file entry
+ */
+static bool
+process_file_descriptor_compare (const struct hash_elem *a,
+                                 const struct hash_elem *b, void *aux UNUSED)
+{
+  return hash_entry (a, struct file_entry, elem)->fd
+         < hash_entry (b, struct file_entry, elem)->fd;
+}
+
+/*
+Helper function to insert a file entry into the process's
+file descriptor table.
+
+If there already exists a pre-existing file element,
+the entry will not be inserted. false is returned.
+
+Returns true on success, false on failure for any reason.
+
+As this utilises malloc, free and hash-operations,
+it is extremely dangerous to call from an interrupt handler.
+*/
+bool
+process_fd_table_insert (struct hash *fd_table, int fd, struct file *entry)
+{
+  struct file_entry *table_entry = malloc (sizeof *table_entry);
+
+  if (table_entry == NULL)
+    return false;
+
+  /* Insert elements into the entry. */
+  table_entry->file = entry;
+  table_entry->fd = fd;
+
+  /* Initialise the hash element. */
+  hash_elem_init (&table_entry->elem);
+
+  struct hash_elem *old = hash_insert (fd_table, &table_entry->elem);
+
+  /* If there is already an existing element: do nothing. */
+  if (old != NULL)
+    {
+      free (table_entry);
+      return false;
+    }
+  return true;
+}
+
+/*
+Helper function to grab a file entry from a process's
+file descriptor table.
+
+As this utilises malloc, free and hash-operations,
+it is extremely dangerous to call from an interrupt handler.
+*/
+struct file *
+process_fd_table_get (struct hash *fd_table, int fd)
+{
+  /* Create a "probe entry" to find the element itself. */
+  struct file_entry probe_entry;
+  probe_entry.fd = fd;
+  hash_elem_init (&probe_entry.elem);
+
+  /* Use probe element to find file in fd table */
+  struct hash_elem *fd_entry = hash_find (fd_table, &probe_entry.elem);
+
+  if (fd_entry == NULL)
+    return NULL;
+
+  return hash_entry (fd_entry, struct file_entry, elem)->file;
+}
+
+/*
+Helper function to remove a file entry from a process's
+file descriptor table.
+The allocated entry is also freed.
+
+NULL is returned upon failure,
+pointer to the deleted file on success.
+
+As this utilises malloc, free and hash-operations,
+it is extremely dangerous to call from an interrupt handler.
+*/
+struct file *
+process_fd_table_delete (struct hash *fd_table, int fd)
+{
+  /* Create a "probe entry" to find the element itself. */
+  struct file_entry probe_entry;
+  probe_entry.fd = fd;
+  hash_elem_init (&probe_entry.elem);
+
+  /* Use probe element to remove file in fd table */
+  struct hash_elem *fd_entry = hash_delete (fd_table, &probe_entry.elem);
+
+  if (fd_entry == NULL)
+    return NULL;
+
+  struct file_entry *old_entry
+      = hash_entry (fd_entry, struct file_entry, elem);
+  struct file *old_file = old_entry->file;
+
+  /* Free the entry */
+  free (old_entry);
+  return old_file;
+}
+
 /* Basic initialisation of a process running on thread T. */
 static bool 
 process_init (struct thread *t, struct child_record *record)
@@ -132,6 +246,10 @@ process_init (struct thread *t, struct child_record *record)
   process->executable = NULL;
   list_init (&process->children);
   
+  /* Initialise process file descriptor table. */
+  hash_init (&process->fd_table, &process_file_descriptor_hash,
+             &process_file_descriptor_compare, NULL);
+
   /* Link thread to its process. */
   t->process = process;
   return true;
@@ -459,12 +577,9 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
-      || memcmp (ehdr.e_ident, "\177ELF\1\1\1", 7)
-      || ehdr.e_type != 2
-      || ehdr.e_machine != 3
-      || ehdr.e_version != 1
-      || ehdr.e_phentsize != sizeof (struct Elf32_Phdr)
-      || ehdr.e_phnum > 1024) 
+      || memcmp (ehdr.e_ident, "\177ELF\1\1\1", 7) || ehdr.e_type != 2
+      || ehdr.e_machine != 3 || ehdr.e_version != 1
+      || ehdr.e_phentsize != sizeof (struct Elf32_Phdr) || ehdr.e_phnum > 1024)
     {
       printf ("load: %s: error loading executable\n", file_name);
       goto done; 
@@ -519,8 +634,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
                   read_bytes = 0;
                   zero_bytes = ROUND_UP (page_offset + phdr.p_memsz, PGSIZE);
                 }
-              if (!load_segment (file, file_page, (void *) mem_page,
-                                 read_bytes, zero_bytes, writable))
+              if (!load_segment (file, file_page, (void *)mem_page, read_bytes,
+                                 zero_bytes, writable))
                 goto done;
             }
           else
@@ -631,7 +746,8 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
         
       /* Get a new page of memory. */
       uint8_t *kpage = palloc_get_page (PAL_USER);
-      if (kpage == NULL){
+      if (kpage == NULL)
+        {
         return false;
       }
         
@@ -643,7 +759,8 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       }     
 
       /* Load data into the page. */
-      if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes){
+      if (file_read (file, kpage, page_read_bytes) != (int)page_read_bytes)
+        {
         return false; 
       }
       memset (kpage + page_read_bytes, 0, page_zero_bytes);
