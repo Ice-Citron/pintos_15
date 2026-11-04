@@ -3,6 +3,7 @@
 static void syscall_handler (struct intr_frame *);
 static void syscall_halt (void);
 static void syscall_exit (int);
+static tid_t syscall_exec (const char *cmd_line);
 static uint32_t syscall_write (int fd, const void *buffer, unsigned size);
 
 static void
@@ -15,6 +16,17 @@ static void
 syscall_exit (int exit_code)
 {
   process_exit (exit_code);
+}
+
+/* Runs the program named in CMD_LINE, passing it the rest of the line as
+   arguments.  Returns the new process's pid, or -1 if the program cannot
+   be loaded.  Kills the caller if CMD_LINE is not a valid string. */
+static tid_t
+syscall_exec (const char *cmd_line)
+{
+  if (!safemem_is_valid_string ((char *)cmd_line))
+    process_exit (PROC_ERR);
+  return process_execute (cmd_line);
 }
 
 /*
@@ -87,6 +99,7 @@ syscall_handler (struct intr_frame *f)
       break;
     case SYS_EXEC:
       /* Start another process. */
+      ret_code = syscall_exec ((const char *)safemem_read_syscall_arg(f,0));
       break;
     case SYS_WAIT:
       /* Wait for a child process to die. */
