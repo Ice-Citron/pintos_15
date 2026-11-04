@@ -4,6 +4,7 @@ static void syscall_handler (struct intr_frame *);
 static void syscall_halt (void);
 static void syscall_exit (int);
 static tid_t syscall_exec (const char *cmd_line);
+static int syscall_wait (tid_t tid);
 static uint32_t syscall_write (int fd, const void *buffer, unsigned size);
 
 static void
@@ -27,6 +28,15 @@ syscall_exec (const char *cmd_line)
   if (!safemem_is_valid_string ((char *)cmd_line))
     process_exit (PROC_ERR);
   return process_execute (cmd_line);
+}
+
+/* Waits for child process TID to exit and returns its exit status, or -1
+   if TID is not a child of the caller, was already waited for, or was
+   killed by the kernel. */
+static int
+syscall_wait (tid_t tid)
+{
+  return process_wait (tid);
 }
 
 /*
@@ -103,6 +113,7 @@ syscall_handler (struct intr_frame *f)
       break;
     case SYS_WAIT:
       /* Wait for a child process to die. */
+      ret_code = syscall_wait ((tid_t)safemem_read_syscall_arg(f,0));
       break;
     case SYS_CREATE:
       /* Create a file. */
