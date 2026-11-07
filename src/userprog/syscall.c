@@ -64,6 +64,7 @@ syscall_handler (struct intr_frame *f)
       break;
     case SYS_OPEN:
       /* Open a file. */
+      ret_code = syscall_open ((const char *) safemem_read_syscall_arg (f, 0));
       break;
     case SYS_FILESIZE:
       /* Obtain a file's size. */
@@ -74,9 +75,9 @@ syscall_handler (struct intr_frame *f)
     case SYS_WRITE:
       /* Write to a file. */
       {
-        int fd = (int)safemem_read_syscall_arg (f, 0);
-        const void *buffer = (const void *)safemem_read_syscall_arg (f, 1);
-        unsigned size = (unsigned)safemem_read_syscall_arg (f, 2);
+        int fd = (int) safemem_read_syscall_arg (f, 0);
+        const void *buffer = (const void *) safemem_read_syscall_arg (f, 1);
+        unsigned size = (unsigned) safemem_read_syscall_arg (f, 2);
 
         ret_code = syscall_write (fd, buffer, size);
       }
@@ -121,9 +122,22 @@ static bool syscall_remove (const char *file)
   return false;
 }
 
+/* Opens file called FILE. Returns non-negative file descriptor on success, or
+   FD_ERR if file could not be opened. */
 static int syscall_open (const char *file)
 {
-  return -1;
+  struct file *opened_file;
+  int fd;
+
+  if (!safemem_is_valid_string ((char *) file)) 
+    process_exit (PROC_ERR);
+  opened_file = filesys_open (file);
+  if (opened_file == NULL)
+    return FD_ERR;
+  fd = process_fd_table_add (thread_current ()->process, opened_file);
+  if (fd == FD_ERR)
+    file_close (opened_file);
+  return fd;
 }
 
 static int syscall_filesize (int fd)

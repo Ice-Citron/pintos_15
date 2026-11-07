@@ -6,6 +6,8 @@
 #include "threads/thread.h"
 #include "userprog/process.h"
 #include "userprog/safemem.h"
+#include "filesys/file.h"
+#include "filesys/filesys.h"
 #include <stdio.h>
 #include <syscall-nr.h>
 

@@ -203,6 +203,20 @@ process_fd_table_delete (struct hash *fd_table, int fd)
   return old_file;
 }
 
+/* Insert FILE to PROCESS's fd_table with new file descriptor number.
+   Returns fd on success, or FD_ERR on insertion failure */
+int
+process_fd_table_add (struct process *process, struct file *file)
+{
+  int fd;
+  
+  fd = process->next_fd;
+  if (!process_fd_table_insert (&process->fd_table, fd, file))
+    return FD_ERR;
+  process->next_fd++;
+  return fd;
+}
+
 /* Basic initialisation of a process running on thread T. */
 static bool
 process_init (struct thread *t, struct child_record *record)
