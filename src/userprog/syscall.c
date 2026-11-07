@@ -90,6 +90,7 @@ syscall_handler (struct intr_frame *f)
       break;
     case SYS_CLOSE:
       /* Close a file. */
+      syscall_close ((int) safemem_read_syscall_arg (f, 0));
       break;
     default:
       process_exit (PROC_ERR);
@@ -191,6 +192,11 @@ static unsigned syscall_tell (int fd)
   return 0;
 }
 
+/* Closes file descriptor FD and removes file from current process' file 
+   descriptor table */
 static void syscall_close (int fd)
 {
+  struct file *file;
+  file = process_fd_table_delete (&thread_current ()->process->fd_table, fd);
+  file_close (file);
 }
