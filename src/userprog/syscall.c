@@ -23,6 +23,7 @@ static uint32_t syscall_write (int fd, const void *buffer, unsigned size);
 static void syscall_seek (int fd, unsigned position);
 static unsigned syscall_tell (int fd);
 static void syscall_close (int fd);
+static struct file *get_file_from_fd (int fd);
 
 void
 syscall_init (void)
@@ -208,9 +209,8 @@ syscall_read (int fd, void *buffer, unsigned size)
         bytes[i] = input_getc ();
       return size;
     }
-  
-  /* Get FD's file from process' file descriptor table */
-  file = process_fd_table_get (&thread_current ()->process->fd_table, fd);
+
+  file = get_file_from_fd (fd);
   if (file == NULL)
     return FD_ERR;
   return file_read (file, buffer, size);}
@@ -240,9 +240,8 @@ syscall_write (int fd, const void *buffer, unsigned size)
       putbuf (buffer, size);
       return size;
     }
-  
-  /* Get FD's file from process' file descriptor table */
-  file = process_fd_table_get (&thread_current ()->process->fd_table, fd);
+
+  file = get_file_from_fd (fd);
   if (file == NULL)
     return 0;
   return file_write (file, buffer, size);
@@ -267,4 +266,11 @@ syscall_close (int fd)
   struct file *file;
   file = process_fd_table_delete (&thread_current ()->process->fd_table, fd);
   file_close (file);
+}
+
+/* Retrieve file using FD from process' file descriptor table */
+static struct file *
+get_file_from_fd (int fd)
+{
+  return process_fd_table_get (&thread_current ()->process->fd_table, fd);
 }
