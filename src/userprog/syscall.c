@@ -231,7 +231,8 @@ syscall_read (int fd, void *buffer, unsigned size)
   file = get_file_from_fd (fd);
   if (file == NULL)
     return FD_ERR;
-  return file_read (file, buffer, size);}
+  return file_read (file, buffer, size);
+}
 
 /*
 Syscall handler that writes size bytes from buffer to the open file fd.
