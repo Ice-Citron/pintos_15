@@ -48,7 +48,10 @@ syscall_handler (struct intr_frame *f)
       break;
     case SYS_EXIT:
       /* Terminate this process. */
-      syscall_exit (safemem_read_syscall_arg (f, 0));
+      {
+        int exit_code = (int) safemem_read_syscall_arg (f, 0);
+        syscall_exit (exit_code);
+      }
       break;
     case SYS_EXEC:
       /* Start another process. */
@@ -58,17 +61,25 @@ syscall_handler (struct intr_frame *f)
       break;
     case SYS_CREATE:
       /* Create a file. */
-      ret_code = syscall_create ((const char *) safemem_read_syscall_arg (f, 0),
-                                 (unsigned) safemem_read_syscall_arg (f, 1));
+      {
+        const char *file_name = (const char *) safemem_read_syscall_arg (f, 0);
+        unsigned int initial_size = (unsigned) safemem_read_syscall_arg (f, 1);
+        ret_code = syscall_create (file_name, initial_size);
+      }
       break;
     case SYS_REMOVE:
       /* Delete a file. */
-      ret_code = syscall_remove ((const char *) safemem_read_syscall_arg (f, 
-                                                                          0));
+      {
+        const char *file_name = (const char *) safemem_read_syscall_arg (f, 0);
+        ret_code = syscall_remove (file_name);
+      }
       break;
     case SYS_OPEN:
       /* Open a file. */
-      ret_code = syscall_open ((const char *) safemem_read_syscall_arg (f, 0));
+      {
+        const char *file_name = (const char *) safemem_read_syscall_arg (f, 0);
+        ret_code = syscall_open (file_name);
+      }
       break;
     case SYS_FILESIZE:
       /* Obtain a file's size. */
@@ -94,7 +105,10 @@ syscall_handler (struct intr_frame *f)
       break;
     case SYS_CLOSE:
       /* Close a file. */
-      syscall_close ((int) safemem_read_syscall_arg (f, 0));
+      {
+        int file_descriptor = (int) safemem_read_syscall_arg (f, 0);
+        syscall_close (file_descriptor);
+      }
       break;
     default:
       process_exit (PROC_ERR);
