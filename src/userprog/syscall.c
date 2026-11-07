@@ -1,4 +1,14 @@
 #include "userprog/syscall.h"
+#include "userprog/process.h"
+#include "userprog/safemem.h"
+#include "devices/input.h"
+#include "devices/shutdown.h"
+#include "threads/interrupt.h"
+#include "threads/thread.h"
+#include "filesys/file.h"
+#include "filesys/filesys.h"
+#include <stdio.h>
+#include <syscall-nr.h>
 #include <stdbool.h>
 
 static void syscall_handler (struct intr_frame *);
@@ -86,6 +96,13 @@ syscall_handler (struct intr_frame *f)
       break;
     case SYS_READ:
       /* Read from a file. */
+      {
+        int fd = (int) safemem_read_syscall_arg (f, 0);
+        void *buffer = (void *) safemem_read_syscall_arg (f, 1);
+        unsigned size = (unsigned) safemem_read_syscall_arg (f, 2);
+
+        ret_code = syscall_read (fd, buffer, size);
+      }
       break;
     case SYS_WRITE:
       /* Write to a file. */
@@ -133,7 +150,8 @@ syscall_exit (int exit_code)
 
 /* Creates a file called FILE of INITIAL_SIZE bytes. Return true if successful, 
    false otherwise. */
-static bool syscall_create (const char *file, unsigned initial_size)
+static bool 
+syscall_create (const char *file, unsigned initial_size)
 {
   if (!safemem_is_valid_string ((char *) file))
     process_exit (PROC_ERR);
@@ -141,7 +159,8 @@ static bool syscall_create (const char *file, unsigned initial_size)
 }
 
 /* Deletes file called FILE. Return true if successful, false otherwise. */
-static bool syscall_remove (const char *file)
+static bool 
+syscall_remove (const char *file)
 {
   if (!safemem_is_valid_string ((char *) file))
     process_exit (PROC_ERR);
@@ -150,7 +169,8 @@ static bool syscall_remove (const char *file)
 
 /* Opens file called FILE. Returns non-negative file descriptor on success, or
    FD_ERR if file could not be opened. */
-static int syscall_open (const char *file)
+static int 
+syscall_open (const char *file)
 {
   struct file *opened_file;
   int fd;
@@ -166,15 +186,33 @@ static int syscall_open (const char *file)
   return fd;
 }
 
-static int syscall_filesize (int fd)
+static int
+syscall_filesize (int fd)
 {
   return -1;
 }
 
-static int syscall_read (int fd, void *buffer, unsigned size)
+/* Reads SIZE bytes from file descriptor FD into BUFFER. Returns the number of
+   bytes actually read (0 at end of file), or -1 if could not be read. */
+static int
+syscall_read (int fd, void *buffer, unsigned size)
 {
-  return -1;
-}
+  struct file *file;
+  if (!safemem_is_valid_buf (buffer, size))
+    process_exit (PROC_ERR);
+
+  if (fd == STDIN_FILENO)
+    {
+      uint8_t *bytes = buffer;
+      for (unsigned i = 0; i < size; i++)
+        bytes[i] = input_getc ();
+      return size;
+    }
+
+  file = process_fd_table_get (&thread_current ()->process->fd_table, fd);
+  if (file == NULL)
+    return FD_ERR;
+  return file_read (file, buffer, size);}
 
 /*
 Syscall handler that writes size bytes from buffer to the open file fd.
@@ -208,18 +246,21 @@ syscall_write (int fd, const void *buffer, unsigned size)
   return bytes_written;
 }
 
-static void syscall_seek (int fd, unsigned position)
+static void
+syscall_seek (int fd, unsigned position)
 {
 }
 
-static unsigned syscall_tell (int fd)
+static unsigned
+syscall_tell (int fd)
 {
   return 0;
 }
 
 /* Closes file descriptor FD and removes file from current process' file 
    descriptor table */
-static void syscall_close (int fd)
+static void
+syscall_close (int fd)
 {
   struct file *file;
   file = process_fd_table_delete (&thread_current ()->process->fd_table, fd);

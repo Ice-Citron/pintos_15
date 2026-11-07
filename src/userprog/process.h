@@ -8,7 +8,7 @@
 
 #define PROC_SUCC (0)  /* Exit code for normal process termination. */
 #define PROC_ERR (-1)  /* Exit code for erroneous process termination. */
-#define FD_ERR (-1)    /* Exit code when file cannot be opened. */
+#define FD_ERR (-1)    /* Exit code when file cannot be opened or read. */
 #define FD_INIT (2)    /* Minimum valid file descriptor number, reserves 0 for
                           stdin and 1 for stdout. */
 
