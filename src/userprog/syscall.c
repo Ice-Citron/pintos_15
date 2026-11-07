@@ -58,9 +58,13 @@ syscall_handler (struct intr_frame *f)
       break;
     case SYS_CREATE:
       /* Create a file. */
+      ret_code = syscall_create ((const char *) safemem_read_syscall_arg (f, 0),
+                                 (unsigned) safemem_read_syscall_arg (f, 1));
       break;
     case SYS_REMOVE:
       /* Delete a file. */
+      ret_code = syscall_remove ((const char *) safemem_read_syscall_arg (f, 
+                                                                          0));
       break;
     case SYS_OPEN:
       /* Open a file. */
@@ -113,14 +117,21 @@ syscall_exit (int exit_code)
   process_exit (exit_code);
 }
 
+/* Creates a file called FILE of INITIAL_SIZE bytes. Return true if successful, 
+   false otherwise. */
 static bool syscall_create (const char *file, unsigned initial_size)
 {
-  return false;
+  if (!safemem_is_valid_string ((char *) file))
+    process_exit (PROC_ERR);
+  return filesys_create (file, initial_size);
 }
 
+/* Deletes file called FILE. Return true if successful, false otherwise. */
 static bool syscall_remove (const char *file)
 {
-  return false;
+  if (!safemem_is_valid_string ((char *) file))
+    process_exit (PROC_ERR);
+  return filesys_remove (file);
 }
 
 /* Opens file called FILE. Returns non-negative file descriptor on success, or
