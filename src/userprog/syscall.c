@@ -94,6 +94,10 @@ syscall_handler (struct intr_frame *f)
       break;
     case SYS_FILESIZE:
       /* Obtain a file's size. */
+      {
+        int fd = (int) safemem_read_syscall_arg (f, 0);
+        ret_code = syscall_filesize (fd);
+      }
       break;
     case SYS_READ:
       /* Read from a file. */
@@ -117,9 +121,18 @@ syscall_handler (struct intr_frame *f)
       break;
     case SYS_SEEK:
       /* Change position in a file. */
+      {
+        int fd = (int) safemem_read_syscall_arg (f, 0);
+        unsigned position = (unsigned) safemem_read_syscall_arg (f, 1);
+        syscall_seek (fd, position);
+      }
       break;
     case SYS_TELL:
       /* Report current position in a file. */
+      {
+        int fd = (int) safemem_read_syscall_arg (f, 0);
+        ret_code = syscall_tell (fd);
+      }
       break;
     case SYS_CLOSE:
       /* Close a file. */
@@ -187,10 +200,15 @@ syscall_open (const char *file)
   return fd;
 }
 
+/* Returns the size, in bytes, of the file open as FD. */
 static int
 syscall_filesize (int fd)
 {
-  return -1;
+  struct file *file;
+  file = get_file_from_fd (fd);
+  if (file == NULL)
+    return FD_ERR;
+  return file_length (file);
 }
 
 /* Reads SIZE bytes from file descriptor FD into BUFFER. Returns the number of
@@ -247,15 +265,27 @@ syscall_write (int fd, const void *buffer, unsigned size)
   return file_write (file, buffer, size);
 }
 
+/* Changes the next byte to be read or written in open file fd to position, 
+   expressed in bytes from the beginning of the file. */
 static void
 syscall_seek (int fd, unsigned position)
 {
+  struct file *file;
+  file = get_file_from_fd (fd);
+  if (file != NULL && position <= INT32_MAX)
+    file_seek (file, position);
 }
 
+/* Returns position of the next byte to be read or written in open file FD, 
+   expressed in bytes from beginning of file. */
 static unsigned
 syscall_tell (int fd)
 {
-  return 0;
+  struct file *file;
+  file = get_file_from_fd (fd);
+  if (file == NULL)
+    return 0;
+  return file_tell (file);
 }
 
 /* Closes file descriptor FD and removes file from current process' file 
