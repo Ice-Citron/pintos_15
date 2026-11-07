@@ -103,8 +103,20 @@ static bool
 process_file_descriptor_compare (const struct hash_elem *a,
                                  const struct hash_elem *b, void *aux UNUSED)
 {
-  return hash_entry (a, struct file_entry, elem)->fd
-         < hash_entry (b, struct file_entry, elem)->fd;
+  int fd_a, fd_b;
+  fd_a = hash_entry (a, struct file_entry, elem)->fd;
+  fd_b = hash_entry (b, struct file_entry, elem)->fd;
+  return fd_a < fd_b;
+}
+
+/* Closes underlying file and frees the file_entry for ELEM. */
+static void
+process_file_descriptor_destroy (struct hash_elem *elem, void *aux UNUSED)
+{
+  struct file_entry *entry;
+  entry = hash_entry (elem, struct file_entry, elem);
+  file_close (entry->file);
+  free (entry);
 }
 
 /*
@@ -408,6 +420,8 @@ process_exit (int exit_code)
           pagedir_activate (NULL);
           pagedir_destroy (pd);
         }
+      /* Close all open files and free file descriptor table. */
+      hash_destroy (&cur->fd_table, &process_file_descriptor_destroy);
 
       /* Finally, destroy the current process's struct */
       thread_current ()->process = NULL;
