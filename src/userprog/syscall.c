@@ -208,7 +208,8 @@ syscall_read (int fd, void *buffer, unsigned size)
         bytes[i] = input_getc ();
       return size;
     }
-
+  
+  /* Get FD's file from process' file descriptor table */
   file = process_fd_table_get (&thread_current ()->process->fd_table, fd);
   if (file == NULL)
     return FD_ERR;
@@ -229,21 +230,22 @@ or 0 if no bytes could be written at all.
 static uint32_t
 syscall_write (int fd, const void *buffer, unsigned size)
 {
-  /* Track the number of bytes written */
-  uint32_t bytes_written = 0;
-  /* Check if valid address*/
-  if (!safemem_is_valid_addr (buffer))
-    process_exit (-1);
+  struct file *file;
+  if (!safemem_is_valid_buf ((void *) buffer, size))
+    process_exit (PROC_ERR);
 
-  /* Write to console if the filesystem requires it */
+  /* Write to console if filesystem requires it */
   if (fd == STDOUT_FILENO)
     {
       putbuf (buffer, size);
       return size;
     }
-
-  /* TODO: write bytes to file */
-  return bytes_written;
+  
+  /* Get FD's file from process' file descriptor table */
+  file = process_fd_table_get (&thread_current ()->process->fd_table, fd);
+  if (file == NULL)
+    return 0;
+  return file_write (file, buffer, size);
 }
 
 static void
