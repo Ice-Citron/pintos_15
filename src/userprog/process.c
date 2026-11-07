@@ -229,6 +229,7 @@ process_init (struct thread *t, struct child_record *record)
   /* Initialise process file descriptor table. */
   hash_init (&process->fd_table, &process_file_descriptor_hash,
              &process_file_descriptor_compare, NULL);
+  process->next_fd = FD_INIT; 
 
   /* Link thread to its process. */
   t->process = process;
