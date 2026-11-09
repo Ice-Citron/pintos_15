@@ -68,11 +68,17 @@ syscall_handler (struct intr_frame *f)
       break;
     case SYS_EXEC:
       /* Start another process. */
-      ret_code = syscall_exec ((const char *)safemem_read_syscall_arg(f,0));
+      {
+        const char *cmd_line = (const char *) safemem_read_syscall_arg (f, 0);
+        ret_code = syscall_exec (cmd_line);
+      }
       break;
     case SYS_WAIT:
       /* Wait for a child process to die. */
-      ret_code = syscall_wait ((tid_t)safemem_read_syscall_arg(f,0));
+      {
+        tid_t tid = (tid_t) safemem_read_syscall_arg (f, 0);
+        ret_code = syscall_wait (tid);
+      }
       break;
     case SYS_CREATE:
       /* Create a file. */
@@ -171,7 +177,7 @@ syscall_exit (int exit_code)
 static tid_t
 syscall_exec (const char *cmd_line)
 {
-  if (!safemem_is_valid_string ((char *)cmd_line))
+  if (!safemem_is_valid_string ((char *) cmd_line))
     process_exit (PROC_ERR);
   return process_execute (cmd_line);
 }
