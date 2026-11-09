@@ -67,7 +67,7 @@ uint32_t
 safemem_read_syscall_arg (struct intr_frame *f, unsigned argnum)
 {
   /* Calculate the argument address */
-  uint32_t *arg_point = (uint32_t *)f->esp;
+  uint32_t *arg_point = (uint32_t *) f->esp;
   arg_point += (1 + argnum);
 
   /* Kill the process if address is false */
