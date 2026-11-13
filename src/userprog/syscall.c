@@ -36,23 +36,17 @@ syscall_init (void)
 static void
 syscall_handler (struct intr_frame *f)
 {
-  /* Syscall arguments are passed to the handler on an interrupt frame (f). */
+  uint32_t syscall_num;
+  uint32_t ret_code = 0;
 
-  /* Check that stack pointer (f->esp) points to a valid address
-  If it does not, handle it SOMEHOW */
+  /* All four bytes of the syscall number must be user memory, since they
+     can straddle a page boundary. */
+  if (!safemem_is_valid_buf (f->esp, sizeof syscall_num))
+    process_exit (PROC_ERR);
+  syscall_num = *(uint32_t *) f->esp;
 
-  if (!safemem_is_valid_addr (f->esp))
-    process_exit (-1);
-
-  /* First, read the syscall number at the stack pointer (f->esp). */
-  uint32_t *syscall_num = (uint32_t *)f->esp;
-
-  /* Store return code */
-  uint32_t ret_code = 0x0;
-
-  /* Then, pass these to the appropriate function (syscall numbers are defined
-   * in lib/syscall-nr.h). */
-  switch (*syscall_num)
+  /* Dispatch on the syscall number (see lib/syscall-nr.h). */
+  switch (syscall_num)
     {
     /* Next, read the arguments above the stack pointer. */
     case SYS_HALT:

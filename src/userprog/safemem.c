@@ -71,8 +71,8 @@ safemem_read_syscall_arg (struct intr_frame *f, unsigned argnum)
   arg_point += (1 + argnum);
 
   /* Kill the process if address is false */
-  if (!safemem_is_valid_buf (arg_point, 4))
-    process_exit (-1);
+  if (!safemem_is_valid_buf (arg_point, sizeof *arg_point))
+    process_exit (PROC_ERR);
 
   return *arg_point;
 }
