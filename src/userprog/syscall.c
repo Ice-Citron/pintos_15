@@ -240,7 +240,7 @@ static int
 syscall_read (int fd, void *buffer, unsigned size)
 {
   struct file *file;
-  if (!safemem_is_valid_buf (buffer, size))
+  if (!safemem_is_writable_buf (buffer, size))
     process_exit (PROC_ERR);
 
   if (fd == STDIN_FILENO)
