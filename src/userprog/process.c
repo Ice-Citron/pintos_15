@@ -58,6 +58,7 @@ static bool load (const char *cmdline, void (**eip) (void), void **esp);
 static size_t split_words (char *line);
 static bool push (void **esp, const void *data, size_t size);
 static bool push_arguments (void **esp, const char *line, size_t size);
+static struct child_record *child_record_create (void);
 static void child_record_release (struct child_record *record);
 
 /* Initialises the main thread as a minimal root OS process.
@@ -96,17 +97,13 @@ process_execute (const char *cmd_line)
   /* Make a copy of CMD_LINE.
      Otherwise there's a race between the caller and load(). */
   args.cmd_line = palloc_get_page (0);
-  record = malloc (sizeof *record);
+  record = child_record_create ();
   if (args.cmd_line != NULL && record != NULL)
     {
       strlcpy (args.cmd_line, cmd_line, PGSIZE);
       args.cmd_line_size = split_words (args.cmd_line);
       args.record = record;
       sema_init (&args.loaded, 0);
-      sema_init (&record->exited, 0);
-      lock_init (&record->lock);
-      record->ref_cnt = 2;          /* Held by the parent and the child. */
-      list_elem_init (&record->elem);
 
       /* Create a new thread to execute CMD_LINE, named after the program. */
       tid = thread_create (args.cmd_line, PRI_DEFAULT, start_process, &args);
@@ -412,6 +409,23 @@ process_wait (tid_t child_tid)
       return exit_code;
     }
   return PROC_ERR;
+}
+
+/* Returns a new record held by both the parent and the child, or a null
+   pointer if out of memory. */
+static struct child_record *
+child_record_create (void)
+{
+  struct child_record *record = malloc (sizeof *record);
+
+  if (record != NULL)
+    {
+      sema_init (&record->exited, 0);
+      lock_init (&record->lock);
+      record->ref_cnt = 2;          /* Held by the parent and the child. */
+      list_elem_init (&record->elem);
+    }
+  return record;
 }
 
 /* Drops one hold on RECORD, freeing it if neither the parent nor the child
