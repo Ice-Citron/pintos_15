@@ -3,7 +3,6 @@
 
 #include <list.h>
 #include <hash.h>
-#include "threads/synch.h"
 #include "threads/thread.h"
 
 #define PROC_SUCC (0)  /* Exit code for normal process termination. */
@@ -12,17 +11,7 @@
 #define FD_INIT (2)    /* Minimum valid file descriptor number, reserves 0 for
                           stdin and 1 for stdout. */
 
-/* A child's exit status, shared by the child and its parent.  Whichever of
-   the two lets go of it last frees it. */
-struct child_record
-  {
-    tid_t tid;                /* Thread identifier of the child. */
-    int exit_code;            /* Set by the child when it exits. */
-    struct semaphore exited;  /* Upped by the child when it exits. */
-    struct lock lock;         /* Protects ref_cnt. */
-    int ref_cnt;              /* How many of parent and child still hold it. */
-    struct list_elem elem;    /* Element in the parent's children list. */
-  };
+struct child_record;
 
 /* A user process, wrapped around a kernel thread.  Only its own thread
    uses it, so it needs no lock. */
@@ -43,7 +32,7 @@ int process_wait (tid_t);
 void process_exit (int) NO_RETURN;
 void process_activate (void);
 int process_fd_add (struct file *file);
-struct file *process_fd_get (int fd);
+struct file *process_fd_lookup_file (int fd);
 struct file *process_fd_remove (int fd);
 
 #endif /* userprog/process.h */

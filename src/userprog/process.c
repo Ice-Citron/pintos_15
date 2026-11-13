@@ -9,6 +9,7 @@
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "threads/synch.h"
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
@@ -18,6 +19,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* A child's exit status, shared by the child and its parent.  Whichever of
+   the two lets go of it last frees it. */
+struct child_record
+  {
+    tid_t tid;                /* Thread identifier of the child. */
+    int exit_code;            /* Set by the child when it exits. */
+    struct semaphore exited;  /* Upped by the child when it exits. */
+    struct lock lock;         /* Protects ref_cnt. */
+    int ref_cnt;              /* How many of parent and child still hold it. */
+    struct list_elem elem;    /* Element in the parent's children list. */
+  };
 
 /* Passed from process_execute() to start_process().  It lives on the
    parent's stack, which is safe because the parent waits until the child
@@ -180,7 +193,7 @@ process_fd_add (struct file *file)
 /* Returns the file open as FD in the current process, or a null pointer if
    FD is not open. */
 struct file *
-process_fd_get (int fd)
+process_fd_lookup_file (int fd)
 {
   struct file_entry probe;
   struct hash_elem *elem;

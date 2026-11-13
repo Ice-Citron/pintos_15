@@ -207,7 +207,7 @@ syscall_open (const uint32_t *args)
 static uint32_t
 syscall_filesize (const uint32_t *args)
 {
-  struct file *file = process_fd_get ((int) args[0]);
+  struct file *file = process_fd_lookup_file ((int) args[0]);
 
   if (file == NULL)
     {
@@ -243,7 +243,7 @@ syscall_read (const uint32_t *args)
       return size;
     }
 
-  file = process_fd_get (fd);
+  file = process_fd_lookup_file (fd);
   if (file == NULL)
     {
       return FD_ERR;
@@ -275,7 +275,7 @@ syscall_write (const uint32_t *args)
       return size;
     }
 
-  file = process_fd_get (fd);
+  file = process_fd_lookup_file (fd);
   if (file == NULL)
     {
       return 0;
@@ -288,7 +288,7 @@ syscall_write (const uint32_t *args)
 static uint32_t
 syscall_seek (const uint32_t *args)
 {
-  struct file *file = process_fd_get ((int) args[0]);
+  struct file *file = process_fd_lookup_file ((int) args[0]);
   unsigned position = (unsigned) args[1];
 
   if (file != NULL && position <= INT32_MAX)
@@ -304,7 +304,7 @@ syscall_seek (const uint32_t *args)
 static uint32_t
 syscall_tell (const uint32_t *args)
 {
-  struct file *file = process_fd_get ((int) args[0]);
+  struct file *file = process_fd_lookup_file ((int) args[0]);
 
   if (file == NULL)
     {
