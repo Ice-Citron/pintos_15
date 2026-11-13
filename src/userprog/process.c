@@ -24,7 +24,7 @@
    has loaded. */
 struct process_args
   {
-    char *cmd_line;               /* Page holding a copy of the command line. */
+    char *cmd_line;               /* Page holding a copy of CMD_LINE. */
     struct child_record *record;  /* Where the new process reports its exit. */
     struct semaphore loaded;      /* Upped by the child once it has loaded. */
     bool load_success;            /* Whether the child loaded. */
@@ -62,7 +62,7 @@ process_execute (const char *cmd_line)
   struct child_record *record;
   tid_t tid = TID_ERROR;
 
-  /* The first word is the program name, so skip any spaces before it */
+  /* The first word is the program name, so skip any spaces before it. */
   cmd_line += strspn (cmd_line, " ");
   if (*cmd_line == '\0')
     {
@@ -80,7 +80,7 @@ process_execute (const char *cmd_line)
       sema_init (&args.loaded, 0);
       sema_init (&record->exited, 0);
       lock_init (&record->lock);
-      record->ref_cnt = 2;
+      record->ref_cnt = 2;          /* Held by the parent and the child. */
       list_elem_init (&record->elem);
 
       /* Create a new thread to execute CMD_LINE */
@@ -98,7 +98,7 @@ process_execute (const char *cmd_line)
       sema_down (&args.loaded);
       if (args.load_success)
         {
-          /* The child may have exited already, but its record outlives it */
+          /* The child may have exited already, but its record outlives it. */
           record->tid = tid;
           list_push_back (&thread_current ()->process->children,
                           &record->elem);
@@ -331,9 +331,9 @@ push (void **esp, const void *data, size_t size)
   return true;
 }
 
-/* Sets up the user stack at *ESP for the command line LINE which is SIZE
-   bytes long with a null for every space:pushes the words, argv, argc and a
-   fake return address. Returns false if they don't fit in the stack page */
+/* Sets up the user stack at *ESP for LINE, a command line SIZE bytes long
+   with a null in place of every space: pushes the words, argv, argc and a
+   fake return address.  Returns false if they don't fit in the stack page. */
 static bool
 push_arguments (void **esp, const char *line, size_t size)
 {
@@ -342,7 +342,7 @@ push_arguments (void **esp, const char *line, size_t size)
   void *argv;
   int argc = 0;
 
-  /* The line alr holds the words in order so it goes on as it is */
+  /* The line already holds the words in order, so it goes on as it is. */
   if (!push (esp, line, size))
     {
       return false;
@@ -350,7 +350,7 @@ push_arguments (void **esp, const char *line, size_t size)
   first = *esp;
 
   /* Align the stack, then push argv[argc] and the pointers to the words,
-   * last word first, so that argv[0] is at the lowest address. */
+     last word first, so that argv[0] is at the lowest address. */
   *esp = (void *) ROUND_DOWN ((uintptr_t) *esp, sizeof (uint32_t));
   if (!push (esp, &null, sizeof null))
     {
@@ -394,7 +394,7 @@ process_wait (tid_t child_tid)
           continue;
         }
 
-      /* Each child can only be waited for once */
+      /* Each child can only be waited for once. */
       sema_down (&child->exited);
       exit_code = child->exit_code;
       list_remove (e);
@@ -468,7 +468,7 @@ process_exit (int exit_code)
       free(cur);
 
       /* Report the exit.  Wake the parent last, so that it only resumes once
-      this process has let go of everything. */
+         this process has let go of everything. */
       if (record != NULL)
         {
           printf ("%s: exit(%d)\n", thread_name (), exit_code);

@@ -12,15 +12,16 @@
 #define FD_INIT (2)    /* Minimum valid file descriptor number, reserves 0 for
                           stdin and 1 for stdout. */
 
-/* A childs exit status which its parent keeps until it waits for it */
+/* A child's exit status, shared by the child and its parent.  Whichever of
+   the two lets go of it last frees it. */
 struct child_record
   {
-    tid_t tid;                /* Thread identifier of the child */
-    int exit_code;            /* Set by the child when it exits */
-    struct semaphore exited;  /* Upped by the child when it exits */
+    tid_t tid;                /* Thread identifier of the child. */
+    int exit_code;            /* Set by the child when it exits. */
+    struct semaphore exited;  /* Upped by the child when it exits. */
     struct lock lock;         /* Protects ref_cnt. */
     int ref_cnt;              /* How many of parent and child still hold it. */
-    struct list_elem elem;    /* Element in the parents children list */
+    struct list_elem elem;    /* Element in the parent's children list. */
   };
 
 /* A user process, wrapped around a kernel thread. */
@@ -30,10 +31,9 @@ struct process
     struct thread *thread;  /* Process underlying kernel thread. */
     struct child_record *record;  /* Shared with the parent, null for root. */
     struct file *executable;      /* Kept open so it can't be written to. */
-    struct hash fd_table;         /* File descriptor table for current process. */
+    struct hash fd_table;         /* Open files, keyed by file descriptor. */
     struct list children;         /* Records of children not waited for. */
-    int next_fd;                  /* Next file descriptor to allocate 
-                                     (monotonically increasing) */
+    int next_fd;                  /* Next file descriptor to give out. */
   };
 
 void root_process_init (void);
