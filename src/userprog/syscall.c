@@ -151,6 +151,14 @@ syscall_create (const uint32_t *args)
     {
       process_exit (PROC_ERR);
     }
+
+  /* filesys_create() takes the size as an off_t, which can't hold more
+     than INT32_MAX.  A bigger size would turn negative and panic the
+     kernel. */
+  if (initial_size > INT32_MAX)
+    {
+      return false;
+    }
   return filesys_create (file, initial_size);
 }
 
