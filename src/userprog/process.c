@@ -33,6 +33,7 @@ struct process_args
 static bool process_init (struct thread *t, struct child_record *record);
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
+static size_t split_words (char *line);
 static bool push (void **esp, const void *data, size_t size);
 static bool push_arguments (void **esp, const char *line, size_t size);
 static void child_record_release (struct child_record *record);
@@ -247,7 +248,7 @@ start_process (void *args_)
   struct thread *cur = thread_current ();
   struct process_args *args = args_;
   struct intr_frame if_;
-  char *program, *p;
+  char *program;
   size_t size;
   bool success;
   
@@ -256,14 +257,10 @@ start_process (void *args_)
 
   if (success)
     {
-    /* Turn every space in the command line into a null so that it is a
-      run of words. The first is the program so name the thread after it
-      for the exit message. */
+      /* The first word is the program, so name the thread after it for the
+         exit message. */
       program = args->cmd_line;
-      for (p = program; *p != '\0'; p++)
-        if (*p == ' ')
-          *p = '\0';
-      size = p - program + 1;
+      size = split_words (program);
       strlcpy (cur->name, program, sizeof cur->name);
 
       /* Initialize interrupt frame and load executable. */
@@ -293,6 +290,24 @@ start_process (void *args_)
      and jump to it. */
   asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
   NOT_REACHED ();
+}
+
+/* Turns every space in LINE into a null, so that it becomes a run of
+   null-terminated words, and returns the size of LINE including its final
+   null. */
+static size_t
+split_words (char *line)
+{
+  char *p;
+
+  for (p = line; *p != '\0'; p++)
+    {
+      if (*p == ' ')
+        {
+          *p = '\0';
+        }
+    }
+  return p - line + 1;
 }
 
 /* Pushes SIZE bytes at DATA onto the user stack at *ESP. Returns false if
