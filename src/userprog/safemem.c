@@ -4,11 +4,12 @@
 #include "userprog/pagedir.h"
 #include "userprog/process.h"
 
+static bool safemem_is_valid_addr (const void *addr);
 static bool check_pages (const void *addr, unsigned size, bool writable);
 
 /* Returns true if ADDR is a user address in a page that is mapped in the
    current process's page directory. */
-bool
+static bool
 safemem_is_valid_addr (const void *addr)
 {
   return addr != NULL && is_user_vaddr (addr)

@@ -5,7 +5,6 @@
 #include <stdint.h>
 #include "threads/interrupt.h"
 
-bool safemem_is_valid_addr (const void *addr);
 bool safemem_is_valid_buf (const void *addr, unsigned size);
 bool safemem_is_writable_buf (void *addr, unsigned size);
 bool safemem_is_valid_string (const char *str);
