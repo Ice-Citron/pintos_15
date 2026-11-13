@@ -9,6 +9,7 @@
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "threads/synch.h"
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
@@ -19,22 +20,45 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* A child's exit status, shared by the child and its parent.  Whichever of
+   the two lets go of it last frees it. */
+struct child_record
+  {
+    tid_t tid;                /* Thread identifier of the child. */
+    int exit_code;            /* Set by the child when it exits. */
+    struct semaphore exited;  /* Upped by the child when it exits. */
+    struct lock lock;         /* Protects ref_cnt. */
+    int ref_cnt;              /* How many of parent and child still hold it. */
+    struct list_elem elem;    /* Element in the parent's children list. */
+  };
+
 /* Passed from process_execute() to start_process().  It lives on the
    parent's stack, which is safe because the parent waits until the child
    has loaded. */
 struct process_args
   {
-    char *cmd_line;               /* Page holding a copy of the command line. */
+    char *cmd_line;               /* Copy of CMD_LINE, split into words. */
+    size_t cmd_line_size;         /* Its size, including the final null. */
     struct child_record *record;  /* Where the new process reports its exit. */
     struct semaphore loaded;      /* Upped by the child once it has loaded. */
     bool load_success;            /* Whether the child loaded. */
   };
 
+/* An open file in a process's file descriptor table. */
+struct file_entry
+  {
+    int fd;                   /* File descriptor the process uses. */
+    struct file *file;        /* The open file. */
+    struct hash_elem elem;    /* Element in the process's fd_table. */
+  };
+
 static bool process_init (struct thread *t, struct child_record *record);
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
+static size_t split_words (char *line);
 static bool push (void **esp, const void *data, size_t size);
 static bool push_arguments (void **esp, const char *line, size_t size);
+static struct child_record *child_record_create (void);
 static void child_record_release (struct child_record *record);
 
 /* Initialises the main thread as a minimal root OS process.
@@ -44,48 +68,51 @@ root_process_init (void)
 {
   struct thread *cur = thread_current ();
   bool success = process_init (cur, NULL);
-  
+
   if (!success)
-    PANIC("Unable to initialise root OS process.");
+    {
+      PANIC ("Unable to initialise root OS process.");
+    }
 }
 
 /* Starts a new thread running a user program loaded from CMD_LINE.
-   The new thread may be scheduled (and may even exit) before process_execute() returns.
-   Returns the new process's thread id, or TID_ERROR if CMD_LINE has no
-   program name, the thread cannot be created or the program fails to
-   load. */
+   The new thread may be scheduled (and may even exit) before
+   process_execute() returns.  Returns the new process's thread id, or
+   TID_ERROR if CMD_LINE has no program name, the thread cannot be created
+   or the program fails to load. */
 tid_t
-process_execute (const char *cmd_line) 
+process_execute (const char *cmd_line)
 {
   struct process_args args;
   struct child_record *record;
   tid_t tid = TID_ERROR;
 
-  /* The first word is the program name, so skip any spaces before it */
+  /* The first word is the program name, so skip any spaces before it. */
   cmd_line += strspn (cmd_line, " ");
   if (*cmd_line == '\0')
-    return TID_ERROR;
+    {
+      return TID_ERROR;
+    }
 
   /* Make a copy of CMD_LINE.
      Otherwise there's a race between the caller and load(). */
   args.cmd_line = palloc_get_page (0);
-  record = malloc (sizeof *record);
+  record = child_record_create ();
   if (args.cmd_line != NULL && record != NULL)
     {
       strlcpy (args.cmd_line, cmd_line, PGSIZE);
+      args.cmd_line_size = split_words (args.cmd_line);
       args.record = record;
       sema_init (&args.loaded, 0);
-      sema_init (&record->exited, 0);
-      lock_init (&record->lock);
-      record->ref_cnt = 2;
-      list_elem_init (&record->elem);
 
-      /* Create a new thread to execute CMD_LINE */
-      tid = thread_create (cmd_line, PRI_DEFAULT, start_process, &args);
+      /* Create a new thread to execute CMD_LINE, named after the program. */
+      tid = thread_create (args.cmd_line, PRI_DEFAULT, start_process, &args);
     }
 
   if (tid == TID_ERROR)
-    free (record);
+    {
+      free (record);
+    }
   else
     {
       /* Exec has to report whether the program loaded, so wait for the
@@ -93,7 +120,7 @@ process_execute (const char *cmd_line)
       sema_down (&args.loaded);
       if (args.load_success)
         {
-          /* The child may have exited already, but its record outlives it */
+          /* The child may have exited already, but its record outlives it. */
           record->tid = tid;
           list_push_back (&thread_current ()->process->children,
                           &record->elem);
@@ -110,158 +137,114 @@ process_execute (const char *cmd_line)
   return tid;
 }
 
-/* Internal function used to hash a process file descriptor
- */
+/* Hashes the file descriptor of the file_entry holding ELEM. */
 static unsigned
-process_file_descriptor_hash (const struct hash_elem *elem, void *aux UNUSED)
+fd_entry_hash (const struct hash_elem *elem, void *aux UNUSED)
 {
   return hash_int (hash_entry (elem, struct file_entry, elem)->fd);
 }
 
-/* Internal function used to compare two elements in a process file entry
- */
+/* Returns true if the file_entry holding A has a lower file descriptor than
+   the one holding B. */
 static bool
-process_file_descriptor_compare (const struct hash_elem *a,
-                                 const struct hash_elem *b, void *aux UNUSED)
+fd_entry_less (const struct hash_elem *a, const struct hash_elem *b,
+               void *aux UNUSED)
 {
-  int fd_a, fd_b;
-  fd_a = hash_entry (a, struct file_entry, elem)->fd;
-  fd_b = hash_entry (b, struct file_entry, elem)->fd;
-  return fd_a < fd_b;
+  return hash_entry (a, struct file_entry, elem)->fd
+         < hash_entry (b, struct file_entry, elem)->fd;
 }
 
-/* Closes underlying file and frees the file_entry for ELEM. */
+/* Closes the file of the file_entry holding ELEM and frees the entry. */
 static void
-process_file_descriptor_destroy (struct hash_elem *elem, void *aux UNUSED)
+fd_entry_destroy (struct hash_elem *elem, void *aux UNUSED)
 {
-  struct file_entry *entry;
-  entry = hash_entry (elem, struct file_entry, elem);
+  struct file_entry *entry = hash_entry (elem, struct file_entry, elem);
+
   file_close (entry->file);
   free (entry);
 }
 
-/*
-Helper function to insert a file entry into the process's
-file descriptor table.
-
-If there already exists a pre-existing file element,
-the entry will not be inserted. false is returned.
-
-Returns true on success, false on failure for any reason.
-
-As this utilises malloc, free and hash-operations,
-it is extremely dangerous to call from an interrupt handler.
-*/
-bool
-process_fd_table_insert (struct hash *fd_table, int fd, struct file *entry)
-{
-  struct file_entry *table_entry = malloc (sizeof *table_entry);
-
-  if (table_entry == NULL)
-    return false;
-
-  /* Insert elements into the entry. */
-  table_entry->file = entry;
-  table_entry->fd = fd;
-
-  /* Initialise the hash element. */
-  hash_elem_init (&table_entry->elem);
-
-  struct hash_elem *old = hash_insert (fd_table, &table_entry->elem);
-
-  /* If there is already an existing element: do nothing. */
-  if (old != NULL)
-    {
-      free (table_entry);
-      return false;
-    }
-  return true;
-}
-
-/*
-Helper function to grab a file entry from a process's
-file descriptor table.
-
-As this utilises malloc, free and hash-operations,
-it is extremely dangerous to call from an interrupt handler.
-*/
-struct file *
-process_fd_table_get (struct hash *fd_table, int fd)
-{
-  /* Create a "probe entry" to find the element itself. */
-  struct file_entry probe_entry;
-  probe_entry.fd = fd;
-  hash_elem_init (&probe_entry.elem);
-
-  /* Use probe element to find file in fd table */
-  struct hash_elem *fd_entry = hash_find (fd_table, &probe_entry.elem);
-
-  if (fd_entry == NULL)
-    return NULL;
-
-  return hash_entry (fd_entry, struct file_entry, elem)->file;
-}
-
-/*
-Helper function to remove a file entry from a process's
-file descriptor table.
-The allocated entry is also freed.
-
-NULL is returned upon failure,
-pointer to the deleted file on success.
-
-As this utilises malloc, free and hash-operations,
-it is extremely dangerous to call from an interrupt handler.
-*/
-struct file *
-process_fd_table_delete (struct hash *fd_table, int fd)
-{
-  /* Create a "probe entry" to find the element itself. */
-  struct file_entry probe_entry;
-  probe_entry.fd = fd;
-  hash_elem_init (&probe_entry.elem);
-
-  /* Use probe element to remove file in fd table */
-  struct hash_elem *fd_entry = hash_delete (fd_table, &probe_entry.elem);
-
-  if (fd_entry == NULL)
-    return NULL;
-
-  struct file_entry *old_entry
-      = hash_entry (fd_entry, struct file_entry, elem);
-  struct file *old_file = old_entry->file;
-
-  /* Free the entry */
-  free (old_entry);
-  return old_file;
-}
-
-/* Insert FILE to PROCESS's fd_table with new file descriptor number.
-   Returns fd on success, or FD_ERR on insertion failure */
+/* Gives FILE the next file descriptor of the current process.  Returns the
+   file descriptor, or FD_ERR if there is no memory to record it. */
 int
-process_fd_table_add (struct process *process, struct file *file)
+process_fd_add (struct file *file)
 {
-  int fd;
-  
-  fd = process->next_fd;
-  if (!process_fd_table_insert (&process->fd_table, fd, file))
-    return FD_ERR;
-  process->next_fd++;
-  return fd;
+  struct process *cur = thread_current ()->process;
+  struct file_entry *entry = malloc (sizeof *entry);
+
+  if (entry == NULL)
+    {
+      return FD_ERR;
+    }
+  entry->fd = cur->next_fd;
+  entry->file = file;
+  hash_elem_init (&entry->elem);
+  if (hash_insert (&cur->fd_table, &entry->elem) != NULL)
+    {
+      free (entry);
+      return FD_ERR;
+    }
+  return cur->next_fd++;
 }
 
-/* Basic initialisation of a process running on thread T. */
-static bool 
+/* Returns the file open as FD in the current process, or a null pointer if
+   FD is not open. */
+struct file *
+process_fd_lookup_file (int fd)
+{
+  struct file_entry probe;
+  struct hash_elem *elem;
+
+  probe.fd = fd;
+  hash_elem_init (&probe.elem);
+  elem = hash_find (&thread_current ()->process->fd_table, &probe.elem);
+  if (elem == NULL)
+    {
+      return NULL;
+    }
+  return hash_entry (elem, struct file_entry, elem)->file;
+}
+
+/* Removes FD from the current process and returns the file it was open as,
+   which the caller must close, or a null pointer if FD is not open. */
+struct file *
+process_fd_remove (int fd)
+{
+  struct file_entry probe;
+  struct file_entry *entry;
+  struct hash_elem *elem;
+  struct file *file;
+
+  probe.fd = fd;
+  hash_elem_init (&probe.elem);
+  elem = hash_delete (&thread_current ()->process->fd_table, &probe.elem);
+  if (elem == NULL)
+    {
+      return NULL;
+    }
+  entry = hash_entry (elem, struct file_entry, elem);
+  file = entry->file;
+  free (entry);
+  return file;
+}
+
+/* Basic initialisation of a process running on thread T, which reports its
+   exit through RECORD.  Returns false if out of memory. */
+static bool
 process_init (struct thread *t, struct child_record *record)
 {
-  /* Create process struct to store process meta-data */
-  struct process *process = malloc (sizeof(struct process));
-  if (process == NULL)
+  /* Create process struct to store process meta-data. */
+  struct process *process = malloc (sizeof *process);
+  if (process == NULL
+      || !hash_init (&process->fd_table, fd_entry_hash, fd_entry_less, NULL))
     {
       /* This process never gets as far as process_exit (), so let go of
          its record here. */
+      free (process);
       if (record != NULL)
-        child_record_release (record);
+        {
+          child_record_release (record);
+        }
       return false;
     }
 
@@ -271,11 +254,7 @@ process_init (struct thread *t, struct child_record *record)
   process->record = record;
   process->executable = NULL;
   list_init (&process->children);
-  
-  /* Initialise process file descriptor table. */
-  hash_init (&process->fd_table, &process_file_descriptor_hash,
-             &process_file_descriptor_compare, NULL);
-  process->next_fd = FD_INIT; 
+  process->next_fd = FD_INIT;
 
   /* Link thread to its process. */
   t->process = process;
@@ -290,32 +269,21 @@ start_process (void *args_)
   struct thread *cur = thread_current ();
   struct process_args *args = args_;
   struct intr_frame if_;
-  char *program, *p;
-  size_t size;
   bool success;
-  
+
   /* Initialise process. */
   success = process_init (cur, args->record);
 
   if (success)
     {
-    /* Turn every space in the command line into a null so that it is a
-      run of words. The first is the program so name the thread after it
-      for the exit message. */
-      program = args->cmd_line;
-      for (p = program; *p != '\0'; p++)
-        if (*p == ' ')
-          *p = '\0';
-      size = p - program + 1;
-      strlcpy (cur->name, program, sizeof cur->name);
-
       /* Initialize interrupt frame and load executable. */
       memset (&if_, 0, sizeof if_);
       if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
       if_.cs = SEL_UCSEG;
       if_.eflags = FLAG_IF | FLAG_MBS;
-      success = load (program, &if_.eip, &if_.esp)
-                && push_arguments (&if_.esp, program, size);
+      success = load (args->cmd_line, &if_.eip, &if_.esp)
+                && push_arguments (&if_.esp, args->cmd_line,
+                                   args->cmd_line_size);
     }
 
   /* Tell the parent whether the load worked.  ARGS is on the parent's
@@ -323,10 +291,12 @@ start_process (void *args_)
      last use of it. */
   args->load_success = success;
   sema_up (&args->loaded);
-  
+
   /* If load failed, terminate the process. */
-  if (!success) 
-    process_exit (PROC_ERR);
+  if (!success)
+    {
+      process_exit (PROC_ERR);
+    }
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -338,6 +308,24 @@ start_process (void *args_)
   NOT_REACHED ();
 }
 
+/* Turns every space in LINE into a null, so that it becomes a run of
+   null-terminated words, and returns the size of LINE including its final
+   null. */
+static size_t
+split_words (char *line)
+{
+  char *p;
+
+  for (p = line; *p != '\0'; p++)
+    {
+      if (*p == ' ')
+        {
+          *p = '\0';
+        }
+    }
+  return p - line + 1;
+}
+
 /* Pushes SIZE bytes at DATA onto the user stack at *ESP. Returns false if
    there is no room left in the stack page. */
 static bool
@@ -345,15 +333,17 @@ push (void **esp, const void *data, size_t size)
 {
   uint8_t *bottom = (uint8_t *) PHYS_BASE - PGSIZE;
   if (size > (size_t) ((uint8_t *) *esp - bottom))
-    return false;
+    {
+      return false;
+    }
   *esp = (uint8_t *) *esp - size;
   memcpy (*esp, data, size);
   return true;
 }
 
-/* Sets up the user stack at *ESP for the command line LINE which is SIZE
-   bytes long with a null for every space:pushes the words, argv, argc and a
-   fake return address. Returns false if they don't fit in the stack page */
+/* Sets up the user stack at *ESP for LINE, a command line SIZE bytes long
+   with a null in place of every space: pushes the words, argv, argc and a
+   fake return address.  Returns false if they don't fit in the stack page. */
 static bool
 push_arguments (void **esp, const char *line, size_t size)
 {
@@ -362,34 +352,39 @@ push_arguments (void **esp, const char *line, size_t size)
   void *argv;
   int argc = 0;
 
-  /* The line alr holds the words in order so it goes on as it is */
+  /* The line already holds the words in order, so it goes on as it is. */
   if (!push (esp, line, size))
-    return false;
+    {
+      return false;
+    }
   first = *esp;
 
   /* Align the stack, then push argv[argc] and the pointers to the words,
-   * last word first, so that argv[0] is at the lowest address. */
+     last word first, so that argv[0] is at the lowest address. */
   *esp = (void *) ROUND_DOWN ((uintptr_t) *esp, sizeof (uint32_t));
   if (!push (esp, &null, sizeof null))
-    return false;
-  for (word = (const char *) PHYS_BASE - 1; word >= first; word--)
-    if (*word != '\0' && (word == first || word[-1] == '\0'))
-      {
-        if (!push (esp, &word, sizeof word))
-          return false;
-        argc++;
-      }
+    {
+      return false;
+    }
+  for (word = first + size - 1; word >= first; word--)
+    {
+      if (*word != '\0' && (word == first || word[-1] == '\0'))
+        {
+          if (!push (esp, &word, sizeof word))
+            {
+              return false;
+            }
+          argc++;
+        }
+    }
   argv = *esp;
   return push (esp, &argv, sizeof argv) && push (esp, &argc, sizeof argc)
          && push (esp, &null, sizeof null);
 }
 
-/* Waits for thread TID to die and returns its exit status. 
- * If it was terminated by the kernel (i.e. killed due to an exception), 
- * returns -1.  
- * If TID is invalid or if it was not a child of the calling process, or if 
- * process_wait() has already been successfully called for the given TID, 
- * returns -1 immediately, without waiting. */
+/* Waits for child process CHILD_TID to die and returns its exit status,
+   or -1 if it was killed by the kernel, is not a child of the caller or
+   was already waited for. */
 int
 process_wait (tid_t child_tid)
 {
@@ -402,9 +397,11 @@ process_wait (tid_t child_tid)
       int exit_code;
 
       if (child->tid != child_tid)
-        continue;
+        {
+          continue;
+        }
 
-      /* Each child can only be waited for once */
+      /* Each child can only be waited for once. */
       sema_down (&child->exited);
       exit_code = child->exit_code;
       list_remove (e);
@@ -412,6 +409,23 @@ process_wait (tid_t child_tid)
       return exit_code;
     }
   return PROC_ERR;
+}
+
+/* Returns a new record held by both the parent and the child, or a null
+   pointer if out of memory. */
+static struct child_record *
+child_record_create (void)
+{
+  struct child_record *record = malloc (sizeof *record);
+
+  if (record != NULL)
+    {
+      sema_init (&record->exited, 0);
+      lock_init (&record->lock);
+      record->ref_cnt = 2;          /* Held by the parent and the child. */
+      list_elem_init (&record->elem);
+    }
+  return record;
 }
 
 /* Drops one hold on RECORD, freeing it if neither the parent nor the child
@@ -426,31 +440,36 @@ child_record_release (struct child_record *record)
   lock_release (&record->lock);
 
   if (last)
-    free (record);
+    {
+      free (record);
+    }
 }
 
-/* Free the current process's resources and then exit the underlying thread. */
+/* Frees the current process's resources, reports EXIT_CODE to its parent
+   and exits the underlying thread. */
 void
 process_exit (int exit_code)
 {
   struct process *cur = thread_current ()->process;
   uint32_t *pd;
-  
+
   /* Clean up all process memory footprint, if it exists. */
   if (cur != NULL)
-    {  
+    {
       struct child_record *record = cur->record;
 
-      /* Let go of the records of children that were never waited for. Each
-         is freed here or by its child, whichever lets go last. */
+      /* Let go of the records of children that were never waited for.
+         Each is freed here or by its child, whichever lets go last. */
       while (!list_empty (&cur->children))
-        child_record_release (list_entry (list_pop_front (&cur->children),
-                                          struct child_record, elem));
+        {
+          child_record_release (list_entry (list_pop_front (&cur->children),
+                                            struct child_record, elem));
+        }
 
       /* Destroy the current process's page directory and switch back
          to the kernel-only page directory. */
       pd = cur->pagedir;
-      if (pd != NULL) 
+      if (pd != NULL)
         {
           /* Correct ordering here is crucial.  We must set
              cur->pagedir to NULL before switching page directories,
@@ -463,18 +482,19 @@ process_exit (int exit_code)
           pagedir_activate (NULL);
           pagedir_destroy (pd);
         }
-      /* Close all open files and free file descriptor table. */
-      hash_destroy (&cur->fd_table, &process_file_descriptor_destroy);
+      
+        /* Close all open files and free file descriptor table. */
+      hash_destroy (&cur->fd_table, fd_entry_destroy);
 
       /* Let the executable be written to again. */
       file_close (cur->executable);
 
-      /* Finally, destroy the current process's struct */
+      /* Finally, destroy the current process's struct. */
       thread_current ()->process = NULL;
-      free(cur);
+      free (cur);
 
       /* Report the exit.  Wake the parent last, so that it only resumes once
-      this process has let go of everything. */
+         this process has let go of everything. */
       if (record != NULL)
         {
           printf ("%s: exit(%d)\n", thread_name (), exit_code);
@@ -483,9 +503,9 @@ process_exit (int exit_code)
           child_record_release (record);
         }
     }
-    
+
   /* Now terminate the thread underlying this process. */
-  thread_exit();
+  thread_exit ();
   NOT_REACHED ();
 }
 
@@ -606,9 +626,12 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
-      || memcmp (ehdr.e_ident, "\177ELF\1\1\1", 7) || ehdr.e_type != 2
-      || ehdr.e_machine != 3 || ehdr.e_version != 1
-      || ehdr.e_phentsize != sizeof (struct Elf32_Phdr) || ehdr.e_phnum > 1024)
+      || memcmp (ehdr.e_ident, "\177ELF\1\1\1", 7)
+      || ehdr.e_type != 2
+      || ehdr.e_machine != 3
+      || ehdr.e_version != 1
+      || ehdr.e_phentsize != sizeof (struct Elf32_Phdr)
+      || ehdr.e_phnum > 1024)
     {
       printf ("load: %s: error loading executable\n", file_name);
       goto done; 
@@ -663,8 +686,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
                   read_bytes = 0;
                   zero_bytes = ROUND_UP (page_offset + phdr.p_memsz, PGSIZE);
                 }
-              if (!load_segment (file, file_page, (void *)mem_page, read_bytes,
-                                 zero_bytes, writable))
+              if (!load_segment (file, file_page, (void *) mem_page,
+                                 read_bytes, zero_bytes, writable))
                 goto done;
             }
           else
@@ -687,9 +710,13 @@ load (const char *file_name, void (**eip) (void), void **esp)
      executable stays open until the process exits, so that it can't be
      changed while it runs.  Closing it allows writes again. */
   if (success)
-    cur->executable = file;
+    {
+      cur->executable = file;
+    }
   else
-    file_close (file);
+    {
+      file_close (file);
+    }
   return success;
 }
 
@@ -777,21 +804,21 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       uint8_t *kpage = palloc_get_page (PAL_USER);
       if (kpage == NULL)
         {
-        return false;
-      }
-        
+          return false;
+        }
+
       /* Add the page to the process's address space. */
-      if (!install_page (upage, kpage, writable)) 
-      {
-        palloc_free_page (kpage);
-        return false; 
-      }     
+      if (!install_page (upage, kpage, writable))
+        {
+          palloc_free_page (kpage);
+          return false;
+        }
 
       /* Load data into the page. */
-      if (file_read (file, kpage, page_read_bytes) != (int)page_read_bytes)
+      if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
         {
-        return false; 
-      }
+          return false;
+        }
       memset (kpage + page_read_bytes, 0, page_zero_bytes);
 
       /* Advance. */
