@@ -31,6 +31,14 @@ struct process_args
     bool load_success;            /* Whether the child loaded. */
   };
 
+/* An open file in a process's file descriptor table. */
+struct file_entry
+  {
+    int fd;                   /* File descriptor the process uses. */
+    struct file *file;        /* The open file. */
+    struct hash_elem elem;    /* Element in the process's fd_table. */
+  };
+
 static bool process_init (struct thread *t, struct child_record *record);
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -118,14 +126,6 @@ process_execute (const char *cmd_line)
   palloc_free_page (args.cmd_line);
   return tid;
 }
-
-/* An open file in a process's file descriptor table. */
-struct file_entry
-  {
-    int fd;                   /* File descriptor the process uses. */
-    struct file *file;        /* The open file. */
-    struct hash_elem elem;    /* Element in the process's fd_table. */
-  };
 
 /* Hashes the file descriptor of the file_entry holding ELEM. */
 static unsigned
@@ -455,7 +455,8 @@ process_exit (int exit_code)
           pagedir_activate (NULL);
           pagedir_destroy (pd);
         }
-      /* Close all open files and free file descriptor table. */
+      
+        /* Close all open files and free file descriptor table. */
       hash_destroy (&cur->fd_table, fd_entry_destroy);
 
       /* Let the executable be written to again. */

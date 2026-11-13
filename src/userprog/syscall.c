@@ -254,8 +254,8 @@ syscall_read (const uint32_t *args)
 /* write (fd, buffer, size): writes SIZE bytes from BUFFER to FD, or to the
    console if FD is STDOUT_FILENO.  Returns the number of bytes written,
    which may be less than SIZE at the end of a file, since files cannot
-   grow, or FD_ERR if FD is not open.  Kills the caller if BUFFER is not
-   user memory. */
+   grow, or 0 if FD is not open.  Kills the caller if BUFFER is not user 
+   memory. */
 static uint32_t
 syscall_write (const uint32_t *args)
 {
@@ -278,7 +278,7 @@ syscall_write (const uint32_t *args)
   file = process_fd_get (fd);
   if (file == NULL)
     {
-      return FD_ERR;
+      return 0;
     }
   return file_write (file, buffer, size);
 }
