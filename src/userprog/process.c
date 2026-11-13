@@ -65,7 +65,9 @@ process_execute (const char *cmd_line)
   /* The first word is the program name, so skip any spaces before it */
   cmd_line += strspn (cmd_line, " ");
   if (*cmd_line == '\0')
-    return TID_ERROR;
+    {
+      return TID_ERROR;
+    }
 
   /* Make a copy of CMD_LINE.
      Otherwise there's a race between the caller and load(). */
@@ -86,7 +88,9 @@ process_execute (const char *cmd_line)
     }
 
   if (tid == TID_ERROR)
-    free (record);
+    {
+      free (record);
+    }
   else
     {
       /* Exec has to report whether the program loaded, so wait for the
@@ -223,7 +227,9 @@ process_init (struct thread *t, struct child_record *record)
          its record here. */
       free (process);
       if (record != NULL)
-        child_record_release (record);
+        {
+          child_record_release (record);
+        }
       return false;
     }
 
@@ -317,7 +323,9 @@ push (void **esp, const void *data, size_t size)
 {
   uint8_t *bottom = (uint8_t *) PHYS_BASE - PGSIZE;
   if (size > (size_t) ((uint8_t *) *esp - bottom))
-    return false;
+    {
+      return false;
+    }
   *esp = (uint8_t *) *esp - size;
   memcpy (*esp, data, size);
   return true;
@@ -336,21 +344,29 @@ push_arguments (void **esp, const char *line, size_t size)
 
   /* The line alr holds the words in order so it goes on as it is */
   if (!push (esp, line, size))
-    return false;
+    {
+      return false;
+    }
   first = *esp;
 
   /* Align the stack, then push argv[argc] and the pointers to the words,
    * last word first, so that argv[0] is at the lowest address. */
   *esp = (void *) ROUND_DOWN ((uintptr_t) *esp, sizeof (uint32_t));
   if (!push (esp, &null, sizeof null))
-    return false;
+    {
+      return false;
+    }
   for (word = (const char *) PHYS_BASE - 1; word >= first; word--)
-    if (*word != '\0' && (word == first || word[-1] == '\0'))
-      {
-        if (!push (esp, &word, sizeof word))
-          return false;
-        argc++;
-      }
+    {
+      if (*word != '\0' && (word == first || word[-1] == '\0'))
+        {
+          if (!push (esp, &word, sizeof word))
+            {
+              return false;
+            }
+          argc++;
+        }
+    }
   argv = *esp;
   return push (esp, &argv, sizeof argv) && push (esp, &argc, sizeof argc)
          && push (esp, &null, sizeof null);
@@ -374,7 +390,9 @@ process_wait (tid_t child_tid)
       int exit_code;
 
       if (child->tid != child_tid)
-        continue;
+        {
+          continue;
+        }
 
       /* Each child can only be waited for once */
       sema_down (&child->exited);
@@ -398,7 +416,9 @@ child_record_release (struct child_record *record)
   lock_release (&record->lock);
 
   if (last)
-    free (record);
+    {
+      free (record);
+    }
 }
 
 /* Free the current process's resources and then exit the underlying thread. */
@@ -416,8 +436,10 @@ process_exit (int exit_code)
       /* Let go of the records of children that were never waited for. Each
          is freed here or by its child, whichever lets go last. */
       while (!list_empty (&cur->children))
-        child_record_release (list_entry (list_pop_front (&cur->children),
-                                          struct child_record, elem));
+        {
+          child_record_release (list_entry (list_pop_front (&cur->children),
+                                            struct child_record, elem));
+        }
 
       /* Destroy the current process's page directory and switch back
          to the kernel-only page directory. */
@@ -659,9 +681,13 @@ load (const char *file_name, void (**eip) (void), void **esp)
      executable stays open until the process exits, so that it can't be
      changed while it runs.  Closing it allows writes again. */
   if (success)
-    cur->executable = file;
+    {
+      cur->executable = file;
+    }
   else
-    file_close (file);
+    {
+      file_close (file);
+    }
   return success;
 }
 

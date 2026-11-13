@@ -41,7 +41,9 @@ syscall_handler (struct intr_frame *f)
   /* All four bytes of the syscall number must be user memory, since they
      can straddle a page boundary. */
   if (!safemem_is_valid_buf (f->esp, sizeof syscall_num))
-    process_exit (PROC_ERR);
+    {
+      process_exit (PROC_ERR);
+    }
   syscall_num = *(uint32_t *) f->esp;
 
   /* Dispatch on the syscall number (see lib/syscall-nr.h). */
@@ -171,7 +173,9 @@ static tid_t
 syscall_exec (const char *cmd_line)
 {
   if (!safemem_is_valid_string (cmd_line))
-    process_exit (PROC_ERR);
+    {
+      process_exit (PROC_ERR);
+    }
   return process_execute (cmd_line);
 }
 
@@ -190,7 +194,9 @@ static bool
 syscall_create (const char *file, unsigned initial_size)
 {
   if (!safemem_is_valid_string (file))
-    process_exit (PROC_ERR);
+    {
+      process_exit (PROC_ERR);
+    }
   return filesys_create (file, initial_size);
 }
 
@@ -199,7 +205,9 @@ static bool
 syscall_remove (const char *file)
 {
   if (!safemem_is_valid_string (file))
-    process_exit (PROC_ERR);
+    {
+      process_exit (PROC_ERR);
+    }
   return filesys_remove (file);
 }
 
@@ -212,13 +220,19 @@ syscall_open (const char *file)
   int fd;
 
   if (!safemem_is_valid_string (file))
-    process_exit (PROC_ERR);
+    {
+      process_exit (PROC_ERR);
+    }
   opened_file = filesys_open (file);
   if (opened_file == NULL)
-    return FD_ERR;
+    {
+      return FD_ERR;
+    }
   fd = process_fd_add (opened_file);
   if (fd == FD_ERR)
-    file_close (opened_file);
+    {
+      file_close (opened_file);
+    }
   return fd;
 }
 
@@ -229,7 +243,9 @@ syscall_filesize (int fd)
   struct file *file;
   file = process_fd_get (fd);
   if (file == NULL)
-    return FD_ERR;
+    {
+      return FD_ERR;
+    }
   return file_length (file);
 }
 
@@ -240,19 +256,25 @@ syscall_read (int fd, void *buffer, unsigned size)
 {
   struct file *file;
   if (!safemem_is_writable_buf (buffer, size))
-    process_exit (PROC_ERR);
+    {
+      process_exit (PROC_ERR);
+    }
 
   if (fd == STDIN_FILENO)
     {
       uint8_t *bytes = buffer;
       for (unsigned i = 0; i < size; i++)
-        bytes[i] = input_getc ();
+        {
+          bytes[i] = input_getc ();
+        }
       return size;
     }
 
   file = process_fd_get (fd);
   if (file == NULL)
-    return FD_ERR;
+    {
+      return FD_ERR;
+    }
   return file_read (file, buffer, size);
 }
 
@@ -273,7 +295,9 @@ syscall_write (int fd, const void *buffer, unsigned size)
 {
   struct file *file;
   if (!safemem_is_valid_buf (buffer, size))
-    process_exit (PROC_ERR);
+    {
+      process_exit (PROC_ERR);
+    }
 
   /* Write to console if filesystem requires it */
   if (fd == STDOUT_FILENO)
@@ -284,7 +308,9 @@ syscall_write (int fd, const void *buffer, unsigned size)
 
   file = process_fd_get (fd);
   if (file == NULL)
-    return FD_ERR;
+    {
+      return FD_ERR;
+    }
   return file_write (file, buffer, size);
 }
 
@@ -296,7 +322,9 @@ syscall_seek (int fd, unsigned position)
   struct file *file;
   file = process_fd_get (fd);
   if (file != NULL && position <= INT32_MAX)
-    file_seek (file, position);
+    {
+      file_seek (file, position);
+    }
 }
 
 /* Returns position of the next byte to be read or written in open file FD, 
@@ -307,7 +335,9 @@ syscall_tell (int fd)
   struct file *file;
   file = process_fd_get (fd);
   if (file == NULL)
-    return 0;
+    {
+      return 0;
+    }
   return file_tell (file);
 }
 
