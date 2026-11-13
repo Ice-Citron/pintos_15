@@ -7,24 +7,60 @@
 #include "threads/thread.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
+#include <debug.h>
 #include <stdio.h>
 #include <syscall-nr.h>
 #include <stdbool.h>
 
+/* Most arguments any system call takes. */
+#define SYSCALL_MAX_ARGS 3
+
+/* A system call: takes its arguments, already read from the user stack,
+   and returns the value the user program finds in eax. */
+typedef uint32_t syscall_func (const uint32_t *args);
+
+/* How to run one system call. */
+struct syscall
+  {
+    syscall_func *func;         /* Does the work. */
+    int argc;                   /* Number of arguments it takes. */
+  };
+
 static void syscall_handler (struct intr_frame *);
-static void syscall_halt (void);
-static void syscall_exit (int exit_code);
-static tid_t syscall_exec (const char *cmd_line);
-static int syscall_wait (tid_t tid);
-static bool syscall_create (const char *file, unsigned initial_size);
-static bool syscall_remove (const char *file);
-static int syscall_open (const char *file);
-static int syscall_filesize (int fd);
-static int syscall_read (int fd, void *buffer, unsigned size);
-static uint32_t syscall_write (int fd, const void *buffer, unsigned size);
-static void syscall_seek (int fd, unsigned position);
-static unsigned syscall_tell (int fd);
-static void syscall_close (int fd);
+static uint32_t syscall_halt (const uint32_t *args);
+static uint32_t syscall_exit (const uint32_t *args);
+static uint32_t syscall_exec (const uint32_t *args);
+static uint32_t syscall_wait (const uint32_t *args);
+static uint32_t syscall_create (const uint32_t *args);
+static uint32_t syscall_remove (const uint32_t *args);
+static uint32_t syscall_open (const uint32_t *args);
+static uint32_t syscall_filesize (const uint32_t *args);
+static uint32_t syscall_read (const uint32_t *args);
+static uint32_t syscall_write (const uint32_t *args);
+static uint32_t syscall_seek (const uint32_t *args);
+static uint32_t syscall_tell (const uint32_t *args);
+static uint32_t syscall_close (const uint32_t *args);
+
+/* Every system call, indexed by its number (lib/syscall-nr.h). */
+static const struct syscall syscalls[] =
+  {
+    [SYS_HALT] = {syscall_halt, 0},
+    [SYS_EXIT] = {syscall_exit, 1},
+    [SYS_EXEC] = {syscall_exec, 1},
+    [SYS_WAIT] = {syscall_wait, 1},
+    [SYS_CREATE] = {syscall_create, 2},
+    [SYS_REMOVE] = {syscall_remove, 1},
+    [SYS_OPEN] = {syscall_open, 1},
+    [SYS_FILESIZE] = {syscall_filesize, 1},
+    [SYS_READ] = {syscall_read, 3},
+    [SYS_WRITE] = {syscall_write, 3},
+    [SYS_SEEK] = {syscall_seek, 2},
+    [SYS_TELL] = {syscall_tell, 1},
+    [SYS_CLOSE] = {syscall_close, 1},
+  };
+
+/* Number of entries in SYSCALLS. */
+#define SYSCALL_CNT (sizeof syscalls / sizeof *syscalls)
 
 void
 syscall_init (void)
@@ -33,12 +69,15 @@ syscall_init (void)
 }
 
 /* Reads the system call number and arguments from the user stack in F,
-   runs the system call and puts its result in F's eax. */
+   runs the system call and puts its result in F's eax.  Kills the process
+   if the number is unknown or any of it is not in user memory. */
 static void
 syscall_handler (struct intr_frame *f)
 {
   uint32_t syscall_num;
-  uint32_t ret_code = 0;
+  uint32_t args[SYSCALL_MAX_ARGS];
+  const struct syscall *call;
+  int i;
 
   /* All four bytes of the syscall number must be user memory, since they
      can straddle a page boundary. */
@@ -47,122 +86,43 @@ syscall_handler (struct intr_frame *f)
       process_exit (PROC_ERR);
     }
   syscall_num = *(uint32_t *) f->esp;
-
-  /* Dispatch on the syscall number (see lib/syscall-nr.h). */
-  switch (syscall_num)
+  if (syscall_num >= SYSCALL_CNT || syscalls[syscall_num].func == NULL)
     {
-    case SYS_HALT:
-      syscall_halt ();
-      break;
-    case SYS_EXIT:
-      {
-        int exit_code = (int) safemem_read_syscall_arg (f, 0);
-        syscall_exit (exit_code);
-      }
-      break;
-    case SYS_EXEC:
-      {
-        const char *cmd_line = (const char *) safemem_read_syscall_arg (f, 0);
-        ret_code = syscall_exec (cmd_line);
-      }
-      break;
-    case SYS_WAIT:
-      {
-        tid_t tid = (tid_t) safemem_read_syscall_arg (f, 0);
-        ret_code = syscall_wait (tid);
-      }
-      break;
-    case SYS_CREATE:
-      {
-        const char *file_name = (const char *) safemem_read_syscall_arg (f, 0);
-        unsigned int initial_size = (unsigned) safemem_read_syscall_arg (f, 1);
-        ret_code = syscall_create (file_name, initial_size);
-      }
-      break;
-    case SYS_REMOVE:
-      {
-        const char *file_name = (const char *) safemem_read_syscall_arg (f, 0);
-        ret_code = syscall_remove (file_name);
-      }
-      break;
-    case SYS_OPEN:
-      {
-        const char *file_name = (const char *) safemem_read_syscall_arg (f, 0);
-        ret_code = syscall_open (file_name);
-      }
-      break;
-    case SYS_FILESIZE:
-      {
-        int fd = (int) safemem_read_syscall_arg (f, 0);
-        ret_code = syscall_filesize (fd);
-      }
-      break;
-    case SYS_READ:
-      {
-        int fd = (int) safemem_read_syscall_arg (f, 0);
-        void *buffer = (void *) safemem_read_syscall_arg (f, 1);
-        unsigned size = (unsigned) safemem_read_syscall_arg (f, 2);
-
-        ret_code = syscall_read (fd, buffer, size);
-      }
-      break;
-    case SYS_WRITE:
-      {
-        int fd = (int) safemem_read_syscall_arg (f, 0);
-        const void *buffer = (const void *) safemem_read_syscall_arg (f, 1);
-        unsigned size = (unsigned) safemem_read_syscall_arg (f, 2);
-
-        ret_code = syscall_write (fd, buffer, size);
-      }
-      break;
-    case SYS_SEEK:
-      {
-        int fd = (int) safemem_read_syscall_arg (f, 0);
-        unsigned position = (unsigned) safemem_read_syscall_arg (f, 1);
-        syscall_seek (fd, position);
-      }
-      break;
-    case SYS_TELL:
-      {
-        int fd = (int) safemem_read_syscall_arg (f, 0);
-        ret_code = syscall_tell (fd);
-      }
-      break;
-    case SYS_CLOSE:
-      {
-        int fd = (int) safemem_read_syscall_arg (f, 0);
-        syscall_close (fd);
-      }
-      break;
-    default:
       process_exit (PROC_ERR);
-      break;
     }
 
-  /* The user program finds the result in eax. */
-  f->eax = ret_code;
+  call = &syscalls[syscall_num];
+  for (i = 0; i < call->argc; i++)
+    {
+      args[i] = safemem_read_syscall_arg (f, i);
+    }
+  f->eax = call->func (args);
 }
 
-/* Shuts PintOS down. */
-static void
-syscall_halt (void)
+/* halt (): shuts PintOS down. */
+static uint32_t
+syscall_halt (const uint32_t *args UNUSED)
 {
   shutdown_power_off ();
 }
 
-/* Ends the current process, reporting EXIT_CODE to its parent. */
-static void
-syscall_exit (int exit_code)
+/* exit (status): ends the current process, reporting STATUS to its
+   parent. */
+static uint32_t
+syscall_exit (const uint32_t *args)
 {
-  process_exit (exit_code);
+  process_exit ((int) args[0]);
 }
 
-/* Runs the program named in CMD_LINE, passing it the rest of the line as
-   arguments.  Returns the new process's pid, or -1 if the program cannot
-   be loaded.  Kills the caller if CMD_LINE is not a valid string. */
-static tid_t
-syscall_exec (const char *cmd_line)
+/* exec (cmd_line): runs the program named in CMD_LINE, passing it the rest
+   of the line as arguments.  Returns the new process's pid, or -1 if the
+   program cannot be loaded.  Kills the caller if CMD_LINE is not a valid
+   string. */
+static uint32_t
+syscall_exec (const uint32_t *args)
 {
+  const char *cmd_line = (const char *) args[0];
+
   if (!safemem_is_valid_string (cmd_line))
     {
       process_exit (PROC_ERR);
@@ -170,20 +130,23 @@ syscall_exec (const char *cmd_line)
   return process_execute (cmd_line);
 }
 
-/* Waits for child process TID to exit and returns its exit status, or -1
-   if TID is not a child of the caller, was already waited for, or was
-   killed by the kernel. */
-static int
-syscall_wait (tid_t tid)
+/* wait (pid): waits for child process PID to exit and returns its exit
+   status, or -1 if PID is not a child of the caller, was already waited
+   for, or was killed by the kernel.  A pid is the child's tid. */
+static uint32_t
+syscall_wait (const uint32_t *args)
 {
-  return process_wait (tid);
+  return process_wait ((tid_t) args[0]);
 }
 
-/* Creates a file called FILE of INITIAL_SIZE bytes.  Returns true if
-   successful, false otherwise. */
-static bool
-syscall_create (const char *file, unsigned initial_size)
+/* create (file, initial_size): creates a file called FILE of INITIAL_SIZE
+   bytes.  Returns true if successful, false otherwise. */
+static uint32_t
+syscall_create (const uint32_t *args)
 {
+  const char *file = (const char *) args[0];
+  unsigned initial_size = (unsigned) args[1];
+
   if (!safemem_is_valid_string (file))
     {
       process_exit (PROC_ERR);
@@ -191,11 +154,13 @@ syscall_create (const char *file, unsigned initial_size)
   return filesys_create (file, initial_size);
 }
 
-/* Deletes the file called FILE.  Returns true if successful, false
-   otherwise. */
-static bool
-syscall_remove (const char *file)
+/* remove (file): deletes the file called FILE.  Returns true if
+   successful, false otherwise. */
+static uint32_t
+syscall_remove (const uint32_t *args)
 {
+  const char *file = (const char *) args[0];
+
   if (!safemem_is_valid_string (file))
     {
       process_exit (PROC_ERR);
@@ -203,11 +168,12 @@ syscall_remove (const char *file)
   return filesys_remove (file);
 }
 
-/* Opens file called FILE. Returns non-negative file descriptor on success, or
-   FD_ERR if file could not be opened. */
-static int
-syscall_open (const char *file)
+/* open (file): opens the file called FILE.  Returns its new file
+   descriptor, or FD_ERR if it could not be opened. */
+static uint32_t
+syscall_open (const uint32_t *args)
 {
+  const char *file = (const char *) args[0];
   struct file *opened_file;
   int fd;
 
@@ -228,12 +194,13 @@ syscall_open (const char *file)
   return fd;
 }
 
-/* Returns the size, in bytes, of the file open as FD. */
-static int
-syscall_filesize (int fd)
+/* filesize (fd): returns the size, in bytes, of the file open as FD, or
+   FD_ERR if FD is not open. */
+static uint32_t
+syscall_filesize (const uint32_t *args)
 {
-  struct file *file;
-  file = process_fd_get (fd);
+  struct file *file = process_fd_get ((int) args[0]);
+
   if (file == NULL)
     {
       return FD_ERR;
@@ -241,12 +208,18 @@ syscall_filesize (int fd)
   return file_length (file);
 }
 
-/* Reads SIZE bytes from file descriptor FD into BUFFER. Returns the number of
-   bytes actually read (0 at end of file), or -1 if could not be read. */
-static int
-syscall_read (int fd, void *buffer, unsigned size)
+/* read (fd, buffer, size): reads SIZE bytes from FD, or from the keyboard
+   if FD is STDIN_FILENO, into BUFFER.  Returns the number of bytes read
+   (0 at end of file), or FD_ERR if FD is not open.  Kills the caller if
+   BUFFER is not writable user memory. */
+static uint32_t
+syscall_read (const uint32_t *args)
 {
+  int fd = (int) args[0];
+  void *buffer = (void *) args[1];
+  unsigned size = (unsigned) args[2];
   struct file *file;
+
   if (!safemem_is_writable_buf (buffer, size))
     {
       process_exit (PROC_ERR);
@@ -270,20 +243,24 @@ syscall_read (int fd, void *buffer, unsigned size)
   return file_read (file, buffer, size);
 }
 
-/* Writes SIZE bytes from BUFFER to the open file FD, or to the console if
-   FD is STDOUT_FILENO.  Returns the number of bytes written, which may be
-   less than SIZE at the end of a file since files cannot grow, or FD_ERR
-   if FD is not open. */
+/* write (fd, buffer, size): writes SIZE bytes from BUFFER to FD, or to the
+   console if FD is STDOUT_FILENO.  Returns the number of bytes written,
+   which may be less than SIZE at the end of a file, since files cannot
+   grow, or FD_ERR if FD is not open.  Kills the caller if BUFFER is not
+   user memory. */
 static uint32_t
-syscall_write (int fd, const void *buffer, unsigned size)
+syscall_write (const uint32_t *args)
 {
+  int fd = (int) args[0];
+  const void *buffer = (const void *) args[1];
+  unsigned size = (unsigned) args[2];
   struct file *file;
+
   if (!safemem_is_valid_buf (buffer, size))
     {
       process_exit (PROC_ERR);
     }
 
-  /* Write to console if filesystem requires it */
   if (fd == STDOUT_FILENO)
     {
       putbuf (buffer, size);
@@ -298,26 +275,29 @@ syscall_write (int fd, const void *buffer, unsigned size)
   return file_write (file, buffer, size);
 }
 
-/* Makes POSITION, in bytes from the start of the file, the next byte to be
-   read or written in open file FD. */
-static void
-syscall_seek (int fd, unsigned position)
+/* seek (fd, position): makes POSITION, in bytes from the start of the
+   file, the next byte to be read or written in open file FD.  Returns 0. */
+static uint32_t
+syscall_seek (const uint32_t *args)
 {
-  struct file *file;
-  file = process_fd_get (fd);
+  struct file *file = process_fd_get ((int) args[0]);
+  unsigned position = (unsigned) args[1];
+
   if (file != NULL && position <= INT32_MAX)
     {
       file_seek (file, position);
     }
+  return 0;
 }
 
-/* Returns position of the next byte to be read or written in open file FD,
-   expressed in bytes from beginning of file. */
-static unsigned
-syscall_tell (int fd)
+/* tell (fd): returns the position of the next byte to be read or written
+   in open file FD, in bytes from the start of the file, or 0 if FD is not
+   open. */
+static uint32_t
+syscall_tell (const uint32_t *args)
 {
-  struct file *file;
-  file = process_fd_get (fd);
+  struct file *file = process_fd_get ((int) args[0]);
+
   if (file == NULL)
     {
       return 0;
@@ -325,9 +305,10 @@ syscall_tell (int fd)
   return file_tell (file);
 }
 
-/* Closes file descriptor FD. */
-static void
-syscall_close (int fd)
+/* close (fd): closes file descriptor FD.  Returns 0. */
+static uint32_t
+syscall_close (const uint32_t *args)
 {
-  file_close (process_fd_remove (fd));
+  file_close (process_fd_remove ((int) args[0]));
+  return 0;
 }
