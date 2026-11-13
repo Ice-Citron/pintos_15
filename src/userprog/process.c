@@ -45,9 +45,11 @@ root_process_init (void)
 {
   struct thread *cur = thread_current ();
   bool success = process_init (cur, NULL);
-  
+
   if (!success)
-    PANIC("Unable to initialise root OS process.");
+    {
+      PANIC ("Unable to initialise root OS process.");
+    }
 }
 
 /* Starts a new thread running a user program loaded from CMD_LINE.
@@ -56,7 +58,7 @@ root_process_init (void)
    TID_ERROR if CMD_LINE has no program name, the thread cannot be created
    or the program fails to load. */
 tid_t
-process_execute (const char *cmd_line) 
+process_execute (const char *cmd_line)
 {
   struct process_args args;
   struct child_record *record;
@@ -216,11 +218,11 @@ process_fd_remove (int fd)
 
 /* Basic initialisation of a process running on thread T, which reports its
    exit through RECORD.  Returns false if out of memory. */
-static bool 
+static bool
 process_init (struct thread *t, struct child_record *record)
 {
-  /* Create process struct to store process meta-data */
-  struct process *process = malloc (sizeof(struct process));
+  /* Create process struct to store process meta-data. */
+  struct process *process = malloc (sizeof *process);
   if (process == NULL
       || !hash_init (&process->fd_table, fd_entry_hash, fd_entry_less, NULL))
     {
@@ -258,7 +260,7 @@ start_process (void *args_)
   char *program;
   size_t size;
   bool success;
-  
+
   /* Initialise process. */
   success = process_init (cur, args->record);
 
@@ -284,10 +286,12 @@ start_process (void *args_)
      last use of it. */
   args->load_success = success;
   sema_up (&args->loaded);
-  
+
   /* If load failed, terminate the process. */
-  if (!success) 
-    process_exit (PROC_ERR);
+  if (!success)
+    {
+      process_exit (PROC_ERR);
+    }
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -426,14 +430,14 @@ process_exit (int exit_code)
 {
   struct process *cur = thread_current ()->process;
   uint32_t *pd;
-  
+
   /* Clean up all process memory footprint, if it exists. */
   if (cur != NULL)
-    {  
+    {
       struct child_record *record = cur->record;
 
-      /* Let go of the records of children that were never waited for. Each
-         is freed here or by its child, whichever lets go last. */
+      /* Let go of the records of children that were never waited for.
+         Each is freed here or by its child, whichever lets go last. */
       while (!list_empty (&cur->children))
         {
           child_record_release (list_entry (list_pop_front (&cur->children),
@@ -443,7 +447,7 @@ process_exit (int exit_code)
       /* Destroy the current process's page directory and switch back
          to the kernel-only page directory. */
       pd = cur->pagedir;
-      if (pd != NULL) 
+      if (pd != NULL)
         {
           /* Correct ordering here is crucial.  We must set
              cur->pagedir to NULL before switching page directories,
@@ -462,9 +466,9 @@ process_exit (int exit_code)
       /* Let the executable be written to again. */
       file_close (cur->executable);
 
-      /* Finally, destroy the current process's struct */
+      /* Finally, destroy the current process's struct. */
       thread_current ()->process = NULL;
-      free(cur);
+      free (cur);
 
       /* Report the exit.  Wake the parent last, so that it only resumes once
          this process has let go of everything. */
@@ -476,9 +480,9 @@ process_exit (int exit_code)
           child_record_release (record);
         }
     }
-    
+
   /* Now terminate the thread underlying this process. */
-  thread_exit();
+  thread_exit ();
   NOT_REACHED ();
 }
 
