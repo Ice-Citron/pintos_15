@@ -24,11 +24,12 @@ struct child_record
     struct list_elem elem;    /* Element in the parent's children list. */
   };
 
-/* A user process, wrapped around a kernel thread. */
+/* A user process, wrapped around a kernel thread.  Only its own thread
+   uses it, so it needs no lock. */
 struct process
   {
-    uint32_t *pagedir;      /* Process page directory. */
-    struct thread *thread;  /* Process underlying kernel thread. */
+    uint32_t *pagedir;            /* Process page directory. */
+    struct thread *thread;        /* Process underlying kernel thread. */
     struct child_record *record;  /* Shared with the parent, null for root. */
     struct file *executable;      /* Kept open so it can't be written to. */
     struct hash fd_table;         /* Open files, keyed by file descriptor. */

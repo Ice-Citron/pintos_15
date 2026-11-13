@@ -51,10 +51,10 @@ root_process_init (void)
 }
 
 /* Starts a new thread running a user program loaded from CMD_LINE.
-   The new thread may be scheduled (and may even exit) before process_execute() returns.
-   Returns the new process's thread id, or TID_ERROR if CMD_LINE has no
-   program name, the thread cannot be created or the program fails to
-   load. */
+   The new thread may be scheduled (and may even exit) before
+   process_execute() returns.  Returns the new process's thread id, or
+   TID_ERROR if CMD_LINE has no program name, the thread cannot be created
+   or the program fails to load. */
 tid_t
 process_execute (const char *cmd_line) 
 {
@@ -83,7 +83,7 @@ process_execute (const char *cmd_line)
       record->ref_cnt = 2;          /* Held by the parent and the child. */
       list_elem_init (&record->elem);
 
-      /* Create a new thread to execute CMD_LINE */
+      /* Create a new thread to execute CMD_LINE. */
       tid = thread_create (cmd_line, PRI_DEFAULT, start_process, &args);
     }
 
@@ -214,7 +214,8 @@ process_fd_remove (int fd)
   return file;
 }
 
-/* Basic initialisation of a process running on thread T. */
+/* Basic initialisation of a process running on thread T, which reports its
+   exit through RECORD.  Returns false if out of memory. */
 static bool 
 process_init (struct thread *t, struct child_record *record)
 {
@@ -372,12 +373,9 @@ push_arguments (void **esp, const char *line, size_t size)
          && push (esp, &null, sizeof null);
 }
 
-/* Waits for thread TID to die and returns its exit status. 
- * If it was terminated by the kernel (i.e. killed due to an exception), 
- * returns -1.  
- * If TID is invalid or if it was not a child of the calling process, or if 
- * process_wait() has already been successfully called for the given TID, 
- * returns -1 immediately, without waiting. */
+/* Waits for child process CHILD_TID to die and returns its exit status,
+   or -1 if it was killed by the kernel, is not a child of the caller or
+   was already waited for. */
 int
 process_wait (tid_t child_tid)
 {
@@ -421,7 +419,8 @@ child_record_release (struct child_record *record)
     }
 }
 
-/* Free the current process's resources and then exit the underlying thread. */
+/* Frees the current process's resources, reports EXIT_CODE to its parent
+   and exits the underlying thread. */
 void
 process_exit (int exit_code)
 {
