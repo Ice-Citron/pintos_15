@@ -256,10 +256,13 @@ process_init (struct thread *t, struct child_record *record)
 {
   /* Create process struct to store process meta-data */
   struct process *process = malloc (sizeof(struct process));
-  if (process == NULL)
+  if (process == NULL
+      || !hash_init (&process->fd_table, &process_file_descriptor_hash,
+                     &process_file_descriptor_compare, NULL))
     {
       /* This process never gets as far as process_exit (), so let go of
          its record here. */
+      free (process);
       if (record != NULL)
         child_record_release (record);
       return false;
@@ -271,11 +274,7 @@ process_init (struct thread *t, struct child_record *record)
   process->record = record;
   process->executable = NULL;
   list_init (&process->children);
-  
-  /* Initialise process file descriptor table. */
-  hash_init (&process->fd_table, &process_file_descriptor_hash,
-             &process_file_descriptor_compare, NULL);
-  process->next_fd = FD_INIT; 
+  process->next_fd = FD_INIT;
 
   /* Link thread to its process. */
   t->process = process;
