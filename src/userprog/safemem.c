@@ -1,78 +1,81 @@
 #include "userprog/safemem.h"
+#include "threads/thread.h"
+#include "threads/vaddr.h"
+#include "userprog/pagedir.h"
+#include "userprog/process.h"
 
-/*
-Returns if the byte at address specified at ADDR is a valid address,
-by checking if it is non-NULL, is a user address, and is allocated to a page.
-*/
+/* Returns true if ADDR is a user address in a page that is mapped in the
+   current process's page directory. */
 bool
-safemem_is_valid_addr (void *addr)
+safemem_is_valid_addr (const void *addr)
 {
-  return (addr != NULL) && is_user_vaddr (addr)
+  return addr != NULL && is_user_vaddr (addr)
          && pagedir_get_page (thread_current ()->process->pagedir, addr)
-                != NULL;
+            != NULL;
 }
 
-/*
-Returns if every byte the block of memory from [ADDR, ADDR + SIZE] is all
-valid.
-*/
+/* Returns true if all SIZE bytes starting at ADDR are mapped user memory.
+   Memory is mapped a page at a time, so one address per page is checked. */
 bool
-safemem_is_valid_buf (void *addr, unsigned size)
+safemem_is_valid_buf (const void *addr, unsigned size)
 {
+  uintptr_t first = (uintptr_t) addr;
+  uintptr_t last = first + size - 1;
+  uintptr_t page;
 
-  /* If the size of the buffer is 0, it is valid anyways. */
   if (size == 0)
-    return true;
-
-  const uint8_t *low = pg_round_down (addr);
-  const uint8_t *high = addr + size - 1;
-  for (uint8_t *cur = low; cur <= high; cur++)
     {
-      if (!safemem_is_valid_addr (cur))
-        return false;
+      return true;
+    }
+
+  /* A buffer that wraps past the top of memory can't be valid. */
+  if (last < first)
+    {
+      return false;
+    }
+
+  for (page = (uintptr_t) pg_round_down (addr); page <= last; page += PGSIZE)
+    {
+      if (!safemem_is_valid_addr ((const void *) page))
+        {
+          return false;
+        }
     }
   return true;
 }
 
-/*
-Returns if an allocated string starting at str is valid.
-*/
+/* Returns true if STR is a null-terminated string lying entirely in mapped
+   user memory.  A page is only looked up when the string first enters it. */
 bool
-safemem_is_valid_string (char *str)
+safemem_is_valid_string (const char *str)
 {
-  /* Repeatedly check if the pointer to the
-  current character is valid. */
-  while (safemem_is_valid_addr (str))
+  if (!safemem_is_valid_addr (str))
     {
-      /* Once a valid terminator is reached,
-      return true. */
-      if (*str == '\0')
-        return true;
-      str++;
+      return false;
     }
-  /* The loop exits when any part of the string
-  is not a valid address. */
-  return false;
+  while (*str != '\0')
+    {
+      str++;
+      if (pg_ofs (str) == 0 && !safemem_is_valid_addr (str))
+        {
+          return false;
+        }
+    }
+  return true;
 }
 
-/*
-Reads the (N + 1)th word (argument) after f->esp.
-This is the Nth (starting from 0th) argument of the syscall;
-
-§4.5.2 System Call Details
-The system call number is in the 32-bit word at the caller's stack pointer,
-the first argument is in the 32-bit word at the next higher address, and so on.
-*/
+/* Returns argument ARGNUM (counting from 0) of the system call in F.  The
+   syscall number is the word at the user stack pointer and the arguments
+   are the words above it (PintOS manual, section 4.5.2).  Kills the process
+   if the argument is not in user memory. */
 uint32_t
 safemem_read_syscall_arg (struct intr_frame *f, unsigned argnum)
 {
-  /* Calculate the argument address */
-  uint32_t *arg_point = (uint32_t *) f->esp;
-  arg_point += (1 + argnum);
+  uint32_t *arg = (uint32_t *) f->esp + 1 + argnum;
 
-  /* Kill the process if address is false */
-  if (!safemem_is_valid_buf (arg_point, sizeof *arg_point))
-    process_exit (PROC_ERR);
-
-  return *arg_point;
+  if (!safemem_is_valid_buf (arg, sizeof *arg))
+    {
+      process_exit (PROC_ERR);
+    }
+  return *arg;
 }

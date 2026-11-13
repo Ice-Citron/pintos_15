@@ -171,7 +171,7 @@ syscall_exit (int exit_code)
 static tid_t
 syscall_exec (const char *cmd_line)
 {
-  if (!safemem_is_valid_string ((char *) cmd_line))
+  if (!safemem_is_valid_string (cmd_line))
     process_exit (PROC_ERR);
   return process_execute (cmd_line);
 }
@@ -190,7 +190,7 @@ syscall_wait (tid_t tid)
 static bool 
 syscall_create (const char *file, unsigned initial_size)
 {
-  if (!safemem_is_valid_string ((char *) file))
+  if (!safemem_is_valid_string (file))
     process_exit (PROC_ERR);
   return filesys_create (file, initial_size);
 }
@@ -199,7 +199,7 @@ syscall_create (const char *file, unsigned initial_size)
 static bool 
 syscall_remove (const char *file)
 {
-  if (!safemem_is_valid_string ((char *) file))
+  if (!safemem_is_valid_string (file))
     process_exit (PROC_ERR);
   return filesys_remove (file);
 }
@@ -212,7 +212,7 @@ syscall_open (const char *file)
   struct file *opened_file;
   int fd;
 
-  if (!safemem_is_valid_string ((char *) file)) 
+  if (!safemem_is_valid_string (file))
     process_exit (PROC_ERR);
   opened_file = filesys_open (file);
   if (opened_file == NULL)
@@ -273,7 +273,7 @@ static uint32_t
 syscall_write (int fd, const void *buffer, unsigned size)
 {
   struct file *file;
-  if (!safemem_is_valid_buf ((void *) buffer, size))
+  if (!safemem_is_valid_buf (buffer, size))
     process_exit (PROC_ERR);
 
   /* Write to console if filesystem requires it */
