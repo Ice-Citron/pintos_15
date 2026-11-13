@@ -24,7 +24,8 @@
    has loaded. */
 struct process_args
   {
-    char *cmd_line;               /* Page holding a copy of CMD_LINE. */
+    char *cmd_line;               /* Copy of CMD_LINE, split into words. */
+    size_t cmd_line_size;         /* Its size, including the final null. */
     struct child_record *record;  /* Where the new process reports its exit. */
     struct semaphore loaded;      /* Upped by the child once it has loaded. */
     bool load_success;            /* Whether the child loaded. */
@@ -78,6 +79,7 @@ process_execute (const char *cmd_line)
   if (args.cmd_line != NULL && record != NULL)
     {
       strlcpy (args.cmd_line, cmd_line, PGSIZE);
+      args.cmd_line_size = split_words (args.cmd_line);
       args.record = record;
       sema_init (&args.loaded, 0);
       sema_init (&record->exited, 0);
@@ -85,8 +87,8 @@ process_execute (const char *cmd_line)
       record->ref_cnt = 2;          /* Held by the parent and the child. */
       list_elem_init (&record->elem);
 
-      /* Create a new thread to execute CMD_LINE. */
-      tid = thread_create (cmd_line, PRI_DEFAULT, start_process, &args);
+      /* Create a new thread to execute CMD_LINE, named after the program. */
+      tid = thread_create (args.cmd_line, PRI_DEFAULT, start_process, &args);
     }
 
   if (tid == TID_ERROR)
@@ -257,8 +259,6 @@ start_process (void *args_)
   struct thread *cur = thread_current ();
   struct process_args *args = args_;
   struct intr_frame if_;
-  char *program;
-  size_t size;
   bool success;
 
   /* Initialise process. */
@@ -266,19 +266,14 @@ start_process (void *args_)
 
   if (success)
     {
-      /* The first word is the program, so name the thread after it for the
-         exit message. */
-      program = args->cmd_line;
-      size = split_words (program);
-      strlcpy (cur->name, program, sizeof cur->name);
-
       /* Initialize interrupt frame and load executable. */
       memset (&if_, 0, sizeof if_);
       if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
       if_.cs = SEL_UCSEG;
       if_.eflags = FLAG_IF | FLAG_MBS;
-      success = load (program, &if_.eip, &if_.esp)
-                && push_arguments (&if_.esp, program, size);
+      success = load (args->cmd_line, &if_.eip, &if_.esp)
+                && push_arguments (&if_.esp, args->cmd_line,
+                                   args->cmd_line_size);
     }
 
   /* Tell the parent whether the load worked.  ARGS is on the parent's
