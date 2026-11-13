@@ -25,7 +25,6 @@ static uint32_t syscall_write (int fd, const void *buffer, unsigned size);
 static void syscall_seek (int fd, unsigned position);
 static unsigned syscall_tell (int fd);
 static void syscall_close (int fd);
-static struct file *get_file_from_fd (int fd);
 
 void
 syscall_init (void)
@@ -217,7 +216,7 @@ syscall_open (const char *file)
   opened_file = filesys_open (file);
   if (opened_file == NULL)
     return FD_ERR;
-  fd = process_fd_table_add (thread_current ()->process, opened_file);
+  fd = process_fd_add (opened_file);
   if (fd == FD_ERR)
     file_close (opened_file);
   return fd;
@@ -228,7 +227,7 @@ static int
 syscall_filesize (int fd)
 {
   struct file *file;
-  file = get_file_from_fd (fd);
+  file = process_fd_get (fd);
   if (file == NULL)
     return FD_ERR;
   return file_length (file);
@@ -251,7 +250,7 @@ syscall_read (int fd, void *buffer, unsigned size)
       return size;
     }
 
-  file = get_file_from_fd (fd);
+  file = process_fd_get (fd);
   if (file == NULL)
     return FD_ERR;
   return file_read (file, buffer, size);
@@ -283,7 +282,7 @@ syscall_write (int fd, const void *buffer, unsigned size)
       return size;
     }
 
-  file = get_file_from_fd (fd);
+  file = process_fd_get (fd);
   if (file == NULL)
     return 0;
   return file_write (file, buffer, size);
@@ -295,7 +294,7 @@ static void
 syscall_seek (int fd, unsigned position)
 {
   struct file *file;
-  file = get_file_from_fd (fd);
+  file = process_fd_get (fd);
   if (file != NULL && position <= INT32_MAX)
     file_seek (file, position);
 }
@@ -306,7 +305,7 @@ static unsigned
 syscall_tell (int fd)
 {
   struct file *file;
-  file = get_file_from_fd (fd);
+  file = process_fd_get (fd);
   if (file == NULL)
     return 0;
   return file_tell (file);
@@ -317,14 +316,5 @@ syscall_tell (int fd)
 static void
 syscall_close (int fd)
 {
-  struct file *file;
-  file = process_fd_table_delete (&thread_current ()->process->fd_table, fd);
-  file_close (file);
-}
-
-/* Retrieve file using FD from process' file descriptor table */
-static struct file *
-get_file_from_fd (int fd)
-{
-  return process_fd_table_get (&thread_current ()->process->fd_table, fd);
+  file_close (process_fd_remove (fd));
 }

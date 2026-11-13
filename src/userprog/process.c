@@ -110,144 +110,103 @@ process_execute (const char *cmd_line)
   return tid;
 }
 
-/* Internal function used to hash a process file descriptor
- */
+/* An open file in a process's file descriptor table. */
+struct file_entry
+  {
+    int fd;                   /* File descriptor the process uses. */
+    struct file *file;        /* The open file. */
+    struct hash_elem elem;    /* Element in the process's fd_table. */
+  };
+
+/* Hashes the file descriptor of the file_entry holding ELEM. */
 static unsigned
-process_file_descriptor_hash (const struct hash_elem *elem, void *aux UNUSED)
+fd_entry_hash (const struct hash_elem *elem, void *aux UNUSED)
 {
   return hash_int (hash_entry (elem, struct file_entry, elem)->fd);
 }
 
-/* Internal function used to compare two elements in a process file entry
- */
+/* Returns true if the file_entry holding A has a lower file descriptor than
+   the one holding B. */
 static bool
-process_file_descriptor_compare (const struct hash_elem *a,
-                                 const struct hash_elem *b, void *aux UNUSED)
+fd_entry_less (const struct hash_elem *a, const struct hash_elem *b,
+               void *aux UNUSED)
 {
-  int fd_a, fd_b;
-  fd_a = hash_entry (a, struct file_entry, elem)->fd;
-  fd_b = hash_entry (b, struct file_entry, elem)->fd;
-  return fd_a < fd_b;
+  return hash_entry (a, struct file_entry, elem)->fd
+         < hash_entry (b, struct file_entry, elem)->fd;
 }
 
-/* Closes underlying file and frees the file_entry for ELEM. */
+/* Closes the file of the file_entry holding ELEM and frees the entry. */
 static void
-process_file_descriptor_destroy (struct hash_elem *elem, void *aux UNUSED)
+fd_entry_destroy (struct hash_elem *elem, void *aux UNUSED)
 {
-  struct file_entry *entry;
-  entry = hash_entry (elem, struct file_entry, elem);
+  struct file_entry *entry = hash_entry (elem, struct file_entry, elem);
+
   file_close (entry->file);
   free (entry);
 }
 
-/*
-Helper function to insert a file entry into the process's
-file descriptor table.
-
-If there already exists a pre-existing file element,
-the entry will not be inserted. false is returned.
-
-Returns true on success, false on failure for any reason.
-
-As this utilises malloc, free and hash-operations,
-it is extremely dangerous to call from an interrupt handler.
-*/
-bool
-process_fd_table_insert (struct hash *fd_table, int fd, struct file *entry)
-{
-  struct file_entry *table_entry = malloc (sizeof *table_entry);
-
-  if (table_entry == NULL)
-    return false;
-
-  /* Insert elements into the entry. */
-  table_entry->file = entry;
-  table_entry->fd = fd;
-
-  /* Initialise the hash element. */
-  hash_elem_init (&table_entry->elem);
-
-  struct hash_elem *old = hash_insert (fd_table, &table_entry->elem);
-
-  /* If there is already an existing element: do nothing. */
-  if (old != NULL)
-    {
-      free (table_entry);
-      return false;
-    }
-  return true;
-}
-
-/*
-Helper function to grab a file entry from a process's
-file descriptor table.
-
-As this utilises malloc, free and hash-operations,
-it is extremely dangerous to call from an interrupt handler.
-*/
-struct file *
-process_fd_table_get (struct hash *fd_table, int fd)
-{
-  /* Create a "probe entry" to find the element itself. */
-  struct file_entry probe_entry;
-  probe_entry.fd = fd;
-  hash_elem_init (&probe_entry.elem);
-
-  /* Use probe element to find file in fd table */
-  struct hash_elem *fd_entry = hash_find (fd_table, &probe_entry.elem);
-
-  if (fd_entry == NULL)
-    return NULL;
-
-  return hash_entry (fd_entry, struct file_entry, elem)->file;
-}
-
-/*
-Helper function to remove a file entry from a process's
-file descriptor table.
-The allocated entry is also freed.
-
-NULL is returned upon failure,
-pointer to the deleted file on success.
-
-As this utilises malloc, free and hash-operations,
-it is extremely dangerous to call from an interrupt handler.
-*/
-struct file *
-process_fd_table_delete (struct hash *fd_table, int fd)
-{
-  /* Create a "probe entry" to find the element itself. */
-  struct file_entry probe_entry;
-  probe_entry.fd = fd;
-  hash_elem_init (&probe_entry.elem);
-
-  /* Use probe element to remove file in fd table */
-  struct hash_elem *fd_entry = hash_delete (fd_table, &probe_entry.elem);
-
-  if (fd_entry == NULL)
-    return NULL;
-
-  struct file_entry *old_entry
-      = hash_entry (fd_entry, struct file_entry, elem);
-  struct file *old_file = old_entry->file;
-
-  /* Free the entry */
-  free (old_entry);
-  return old_file;
-}
-
-/* Insert FILE to PROCESS's fd_table with new file descriptor number.
-   Returns fd on success, or FD_ERR on insertion failure */
+/* Gives FILE the next file descriptor of the current process.  Returns the
+   file descriptor, or FD_ERR if there is no memory to record it. */
 int
-process_fd_table_add (struct process *process, struct file *file)
+process_fd_add (struct file *file)
 {
-  int fd;
-  
-  fd = process->next_fd;
-  if (!process_fd_table_insert (&process->fd_table, fd, file))
-    return FD_ERR;
-  process->next_fd++;
-  return fd;
+  struct process *cur = thread_current ()->process;
+  struct file_entry *entry = malloc (sizeof *entry);
+
+  if (entry == NULL)
+    {
+      return FD_ERR;
+    }
+  entry->fd = cur->next_fd;
+  entry->file = file;
+  hash_elem_init (&entry->elem);
+  if (hash_insert (&cur->fd_table, &entry->elem) != NULL)
+    {
+      free (entry);
+      return FD_ERR;
+    }
+  return cur->next_fd++;
+}
+
+/* Returns the file open as FD in the current process, or a null pointer if
+   FD is not open. */
+struct file *
+process_fd_get (int fd)
+{
+  struct file_entry probe;
+  struct hash_elem *elem;
+
+  probe.fd = fd;
+  hash_elem_init (&probe.elem);
+  elem = hash_find (&thread_current ()->process->fd_table, &probe.elem);
+  if (elem == NULL)
+    {
+      return NULL;
+    }
+  return hash_entry (elem, struct file_entry, elem)->file;
+}
+
+/* Removes FD from the current process and returns the file it was open as,
+   which the caller must close, or a null pointer if FD is not open. */
+struct file *
+process_fd_remove (int fd)
+{
+  struct file_entry probe;
+  struct file_entry *entry;
+  struct hash_elem *elem;
+  struct file *file;
+
+  probe.fd = fd;
+  hash_elem_init (&probe.elem);
+  elem = hash_delete (&thread_current ()->process->fd_table, &probe.elem);
+  if (elem == NULL)
+    {
+      return NULL;
+    }
+  entry = hash_entry (elem, struct file_entry, elem);
+  file = entry->file;
+  free (entry);
+  return file;
 }
 
 /* Basic initialisation of a process running on thread T. */
@@ -257,8 +216,7 @@ process_init (struct thread *t, struct child_record *record)
   /* Create process struct to store process meta-data */
   struct process *process = malloc (sizeof(struct process));
   if (process == NULL
-      || !hash_init (&process->fd_table, &process_file_descriptor_hash,
-                     &process_file_descriptor_compare, NULL))
+      || !hash_init (&process->fd_table, fd_entry_hash, fd_entry_less, NULL))
     {
       /* This process never gets as far as process_exit (), so let go of
          its record here. */
@@ -463,7 +421,7 @@ process_exit (int exit_code)
           pagedir_destroy (pd);
         }
       /* Close all open files and free file descriptor table. */
-      hash_destroy (&cur->fd_table, &process_file_descriptor_destroy);
+      hash_destroy (&cur->fd_table, fd_entry_destroy);
 
       /* Let the executable be written to again. */
       file_close (cur->executable);
