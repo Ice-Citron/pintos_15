@@ -361,7 +361,7 @@ push_arguments (void **esp, const char *line, size_t size)
     {
       return false;
     }
-  for (word = (const char *) PHYS_BASE - 1; word >= first; word--)
+  for (word = first + size - 1; word >= first; word--)
     {
       if (*word != '\0' && (word == first || word[-1] == '\0'))
         {
