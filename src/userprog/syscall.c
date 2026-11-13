@@ -284,7 +284,7 @@ syscall_write (int fd, const void *buffer, unsigned size)
 
   file = process_fd_get (fd);
   if (file == NULL)
-    return 0;
+    return FD_ERR;
   return file_write (file, buffer, size);
 }
 
