@@ -4,6 +4,7 @@
 #include <list.h>
 #include <hash.h>
 #include "threads/thread.h"
+#include "vm/mmap.h"
 
 #define PROC_SUCC (0)  /* Exit code for normal process termination. */
 #define PROC_ERR (-1)  /* Exit code for erroneous process termination. */
@@ -24,6 +25,9 @@ struct process
     struct hash fd_table;         /* Open files, keyed by file descriptor. */
     struct list children;         /* Records of children not waited for. */
     int next_fd;                  /* Next file descriptor to give out. */
+    struct hash spt;              /* Supplemental page table, by upage. */
+    struct mmap_table mmaps;      /* Memory mappings and the next mapid. */
+    void *user_esp;               /* User esp saved on syscall entry. */
   };
 
 void root_process_init (void);
